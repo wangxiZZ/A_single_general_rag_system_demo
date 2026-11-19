@@ -9,7 +9,7 @@
 ## 当前已实现
 
 - Web 管理页：建库/删库、上传/查看状态/删除文档；
-- REST：知识库 CRUD、文档上传/列表/详情/删除；
+- REST：知识库 CRUD、文档上传/列表/详情/删除、检索、问答；
 - 上传校验：扩展名 + magic bytes、大小限制、同库 sha256 去重（409）；
 - 摄取 worker：解析 PDF/docx → 标题树/父子分块 → 图片描述与落盘 → 三路索引，状态推进到 `ready`；
 - 检索：向量（Milvus）/ 关键词（PG tsvector）/ 图谱（Neo4j）+ RRF 融合，可选重排；
@@ -141,7 +141,7 @@ uv run rag-kb reindex --kb <kb_id>        # 从 chunk 表重建三路索引
 src/rag_kb/
 ├── domain/       纯模型与端口协议（不依赖任何存储）
 ├── application/  用例编排：知识库、文档、上传校验
-├── infra/        Postgres / 存储 /（后续）Milvus、Neo4j、解析器、模型客户端
+├── infra/        Postgres / Milvus / Neo4j / 解析器 / 模型客户端 / 存储
 ├── api/          REST 路由、schema、异常映射
 ├── web/          Jinja2 + 本地 HTMX 管理页
 └── main.py       装配：连接池、服务注入、路由挂载
@@ -157,7 +157,7 @@ tests/            unit（fake 端口）/ integration（真容器）/ e2e
 - 复杂表格、公式与版式不保证还原；
 - 当前无鉴权、无流式输出，定位为本机/内网 DEMO；
 - docx 无页码与 bbox，引用将使用段落号而非页码；
-- M2–M5 的解析、召回、回答与 MCP 尚未实现。
+- MCP Server 与 Skill（M5）尚未实现。
 
 ## 文档
 
