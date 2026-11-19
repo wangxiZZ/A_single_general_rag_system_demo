@@ -143,6 +143,25 @@ def find_span(text: str, raw: str) -> tuple[int, int] | None:
     return start, end
 
 
+def map_evidence_to_child(span: tuple[int, int], children: list[Chunk]) -> str | None:
+    """把父块内的证据区间映射到覆盖最多的子块；无交集返回 None（调用方退回父块）。
+
+    当前抽取按子块进行，映射通常是恒等的；保留该函数是为了支持"按父块批量抽取"的
+    备选实现，测试也用它固定这条约定。
+    """
+    best_id: str | None = None
+    best_overlap = 0
+    for chunk in children:
+        overlap = max(
+            0,
+            min(span[1], chunk.char_end) - max(span[0], chunk.char_start),
+        )
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_id = chunk.id
+    return best_id
+
+
 def entity_id(kb_id: UUID, normalized: str, type_name: str) -> str:
     raw = f"{kb_id}:{normalized}:{type_name}".encode()
     return hashlib.sha256(raw).hexdigest()[:32]
