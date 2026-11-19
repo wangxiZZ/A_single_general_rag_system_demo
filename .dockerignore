@@ -22,7 +22,6 @@ tests
 docs
 scripts
 skills
-mcp_server
 *.md
 !README.md
 docker-compose.yml

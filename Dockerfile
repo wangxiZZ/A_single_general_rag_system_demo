@@ -18,9 +18,12 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-# 2) 再装本项目（editable），后续改代码无需重装依赖
+# 2) 再装本项目（editable），后续改代码无需重装依赖。
+#    pyproject 里声明了两个包（src/rag_kb 与 mcp_server），hatchling 构建时要求路径存在；
+#    mcp_server 不参与运行时，但必须随构建上下文提供，否则打包结果依赖「目录恰好缺失」。
 COPY README.md ./
 COPY src ./src
+COPY mcp_server ./mcp_server
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
