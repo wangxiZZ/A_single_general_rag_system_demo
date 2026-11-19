@@ -19,7 +19,7 @@ from neo4j import Driver, GraphDatabase
 from neo4j.exceptions import Neo4jError, ServiceUnavailable
 
 from rag_kb.domain.errors import DependencyUnavailableError, StorageError
-from rag_kb.domain.models import Entity, Mention, Relation
+from rag_kb.domain.models import Entity, GraphEvidence, Mention, Relation
 from rag_kb.infra.neo4j.schema import apply_schema
 
 
@@ -250,6 +250,80 @@ class Neo4jGraphStore:
         with self._session() as session:
             record = session.run(query, **params).single()
         return int(record["n"]) if record else 0
+
+    @_to_thread
+    def expand(
+        self,
+        kb_id: UUID,
+        seed_ids: Sequence[str],
+        max_hops: int,
+        neighbor_limit: int,
+    ) -> list[GraphEvidence]:
+        if not seed_ids or max_hops < 1 or neighbor_limit < 1:
+            return []
+        kb = str(kb_id)
+        frontier = list(dict.fromkeys(seed_ids))
+        products: dict[str, float] = dict.fromkeys(frontier, 1.0)
+        origins: dict[str, set[str]] = {seed: {seed} for seed in frontier}
+        visited: set[str] = set(frontier)
+        scores: dict[str, float] = {}
+        hops: dict[str, int] = {}
+        seeds_for_chunk: dict[str, set[str]] = {}
+
+        with self._session() as session:
+            for hop in range(1, max_hops + 1):
+                if not frontier:
+                    break
+                rows = session.run(
+                    """
+                    UNWIND $ids AS sid
+                    MATCH (s:Entity {kb_id: $kb, id: sid})-[r:REL]-(n:Entity {kb_id: $kb})
+                    WHERE r.kb_id = $kb AND r.chunk_id IS NOT NULL
+                    WITH sid, r, n
+                    ORDER BY sid, r.weight DESC
+                    WITH sid, collect({
+                        nid: n.id, chunk_id: r.chunk_id, weight: r.weight
+                    }) AS neighbors
+                    UNWIND neighbors[0..$limit] AS row
+                    RETURN sid, row.nid AS nid, row.chunk_id AS chunk_id,
+                           row.weight AS weight
+                    """,
+                    kb=kb,
+                    ids=frontier,
+                    limit=neighbor_limit,
+                ).data()
+
+                next_products: dict[str, float] = {}
+                next_origins: dict[str, set[str]] = {}
+                for row in rows:
+                    source = row["sid"]
+                    target = row["nid"]
+                    chunk_id = row["chunk_id"]
+                    if not target or not chunk_id:
+                        continue
+                    weight = float(row["weight"] or 1.0)
+                    path_product = products[source] * weight
+                    scores[chunk_id] = scores.get(chunk_id, 0.0) + path_product / (1 + hop)
+                    hops[chunk_id] = min(hops.get(chunk_id, hop), hop)
+                    seeds_for_chunk.setdefault(chunk_id, set()).update(origins[source])
+                    if target not in visited:
+                        next_products[target] = next_products.get(target, 0.0) + path_product
+                        next_origins.setdefault(target, set()).update(origins[source])
+
+                visited.update(next_products)
+                products = next_products
+                origins = next_origins
+                frontier = list(next_products)
+
+        return [
+            GraphEvidence(
+                chunk_id=chunk_id,
+                score=round(score, 6),
+                hops=hops[chunk_id],
+                seed_ids=tuple(sorted(seeds_for_chunk[chunk_id])),
+            )
+            for chunk_id, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        ]
 
     @_to_thread
     def candidate_entities(
