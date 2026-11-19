@@ -17,6 +17,7 @@ from rag_kb.domain.models import (
     Entity,
     GraphEvidence,
     LexicalHit,
+    QueryLog,
     SearchMode,
     VectorHit,
 )
@@ -50,6 +51,7 @@ class FakeGraphStore:
 
 class FakeRepository:
     def __init__(self) -> None:
+        self.query_logs: list[QueryLog] = []
         self.chunks = {
             chunk.id: chunk
             for chunk in [
@@ -64,6 +66,9 @@ class FakeRepository:
 
     async def get_chunks(self, kb_id: UUID, chunk_ids) -> list[Chunk]:
         return [self.chunks[cid] for cid in chunk_ids if cid in self.chunks]
+
+    async def add_query_log(self, log: QueryLog) -> None:
+        self.query_logs.append(log)
 
     async def get_document(self, kb_id: UUID, doc_id: UUID) -> Document | None:
         return Document(
@@ -147,6 +152,22 @@ async def test_vector_mode_without_embedder_raises() -> None:
         await _service(embedder=None, vector_store=None).search(
             KB_ID, "查询", mode=SearchMode.VECTOR
         )
+
+
+async def test_query_log_is_written() -> None:
+    service = _service()
+    hits = await service.search(KB_ID, "年假", mode=SearchMode.HYBRID)
+
+    logs = service._repo.query_logs  # type: ignore[attr-defined]
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.kb_id == KB_ID
+    assert log.mode is SearchMode.HYBRID
+    assert log.query == "年假"
+    assert log.hit_ids == tuple(hit.chunk_id for hit in hits)
+    assert log.channels["vector"] >= 1
+    assert log.latency_ms >= 0
+    assert log.rerank is False
 
 
 async def test_hybrid_degrades_when_vector_channel_missing() -> None:

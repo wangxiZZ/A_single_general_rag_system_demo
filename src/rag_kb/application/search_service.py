@@ -9,6 +9,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
 from uuid import UUID
 
 from rag_kb.application.fusion import reciprocal_rank_fusion, weighted_fusion
@@ -19,7 +21,7 @@ from rag_kb.domain.errors import (
     DomainError,
     NotFoundError,
 )
-from rag_kb.domain.models import SearchHit, SearchMode
+from rag_kb.domain.models import QueryLog, SearchHit, SearchMode
 from rag_kb.domain.ports import (
     Embedder,
     GraphStore,
@@ -28,6 +30,8 @@ from rag_kb.domain.ports import (
     Reranker,
     VectorStore,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SearchService:
@@ -75,6 +79,7 @@ class SearchService:
     ) -> list[SearchHit]:
         if await self._repo.get_kb(kb_id) is None:
             raise NotFoundError("knowledge base", kb_id)
+        started = time.perf_counter()
         resolved_mode = SearchMode(mode)
         limit = top_k or self._top_k
 
@@ -86,8 +91,8 @@ class SearchService:
         else:
             rankings = await self._collect_channels(kb_id, query)
             if not rankings:
-                return []
-            if resolved_mode is SearchMode.HYBRID:
+                hits = []
+            elif resolved_mode is SearchMode.HYBRID:
                 hits = reciprocal_rank_fusion(rankings, k=self._rrf_k, weights=self._hybrid_weights)
             else:
                 hits = weighted_fusion(rankings, weights=self._hybrid_weights)
@@ -96,7 +101,37 @@ class SearchService:
             if self._reranker is None:
                 raise ConfigurationError("RERANK_* 未配置，无法重排")
             hits = await self._reranker.rerank(query, hits[:30], limit)
-        return hits[:limit]
+        hits = hits[:limit]
+        await self._log_query(kb_id, query, resolved_mode, hits, rerank, started)
+        return hits
+
+    async def _log_query(
+        self,
+        kb_id: UUID,
+        query: str,
+        mode: SearchMode,
+        hits: list[SearchHit],
+        rerank: bool,
+        started: float,
+    ) -> None:
+        channels: dict[str, int] = {}
+        for hit in hits:
+            for channel in hit.channels:
+                channels[channel] = channels.get(channel, 0) + 1
+        log = QueryLog(
+            kb_id=kb_id,
+            mode=mode,
+            query=query,
+            latency_ms=round((time.perf_counter() - started) * 1000, 1),
+            hit_ids=tuple(hit.chunk_id for hit in hits),
+            channels=channels,
+            rerank=rerank,
+        )
+        # 日志写入失败不影响本次检索；单独记录异常，避免把查询日志变成可用性单点。
+        try:
+            await self._repo.add_query_log(log)
+        except Exception:
+            logger.exception("write query log failed")
 
     async def _collect_channels(self, kb_id: UUID, query: str) -> dict[str, list[SearchHit]]:
         channels = ("vector", "keyword", "graph")

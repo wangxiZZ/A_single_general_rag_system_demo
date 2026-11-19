@@ -3,8 +3,8 @@
 创建知识库 → 上传 PDF/docx → 解析分块 → 向量/关键词/图谱三路召回 → 基于证据回答。
 以 Server 形式运行，同时提供 REST、Web 管理页、MCP Server 与 Claude Code Skill。
 
-> **当前进度**：M0–M3 已完成（骨架、知识库/文档、解析分块、三路召回与融合）。
-> 回答生成、MCP 在 M4/M5 实现；本文档会随里程碑更新。
+> **当前进度**：M0–M4 已完成（骨架、知识库/文档、解析分块、三路召回、回答与引用）。
+> MCP 与 Skill 在 M5 实现；本文档会随里程碑更新。
 
 ## 当前已实现
 
@@ -13,11 +13,12 @@
 - 上传校验：扩展名 + magic bytes、大小限制、同库 sha256 去重（409）；
 - 摄取 worker：解析 PDF/docx → 标题树/父子分块 → 图片描述与落盘 → 三路索引，状态推进到 `ready`；
 - 检索：向量（Milvus）/ 关键词（PG tsvector）/ 图谱（Neo4j）+ RRF 融合，可选重排；
+- 回答：证据拼装、父块回填、引用编号回校验、无证据拒答；
 - 文档状态机：`pending → parsing → chunked → indexing → ready`，失败可重试；
 - 删除级联：三路索引、DB 行、分块、任务与磁盘文件一起清理；
 - 健康检查：`/healthz`、`/readyz`（Postgres / Milvus / Neo4j + 模型配置）。
 
-> 问答接口（`/ask`）与 MCP 尚未实现（M4/M5）；检索已可用。
+> MCP Server 与 Skill 尚未实现（M5）；REST 与 Web 已可完成检索与问答。
 
 ## 快速开始
 
@@ -103,6 +104,11 @@ curl -s -X DELETE localhost:8000/api/kbs/<kb_id>
 curl -s -X POST localhost:8000/api/kbs/<kb_id>/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"年假政策","mode":"hybrid","top_k":10}'
+
+# 基于证据回答（返回引用）
+curl -s -X POST localhost:8000/api/kbs/<kb_id>/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"年假怎么申请？","mode":"hybrid"}'
 
 # 重建三路索引
 curl -s -X POST localhost:8000/api/kbs/<kb_id>/reindex
