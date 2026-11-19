@@ -16,10 +16,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from rag_kb import __version__
-from rag_kb.api.routers import health
+from rag_kb.api.errors import register_exception_handlers
+from rag_kb.api.routers import documents, health, kbs
+from rag_kb.application.document_service import DocumentService
+from rag_kb.application.kb_service import KbService
 from rag_kb.config import Settings, get_settings
 from rag_kb.domain.ports import MetadataRepository
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
+from rag_kb.infra.storage.local import LocalStorage
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         await created_repository.open()
         app.state.repository = created_repository
+
+    repository: MetadataRepository = app.state.repository
+    storage = LocalStorage(settings.data_dir)
+    app.state.kb_service = KbService(repository, storage)
+    app.state.document_service = DocumentService(
+        repository,
+        storage,
+        max_upload_mb=settings.max_upload_mb,
+    )
 
     configured = settings.model_api_configured
     logger.info(
@@ -84,6 +97,9 @@ def create_app(
     app.state.repository = repository
 
     app.include_router(health.router)
+    app.include_router(kbs.router, prefix="/api")
+    app.include_router(documents.router, prefix="/api")
+    register_exception_handlers(app)
 
     @app.get("/", include_in_schema=False)
     def index() -> dict[str, object]:

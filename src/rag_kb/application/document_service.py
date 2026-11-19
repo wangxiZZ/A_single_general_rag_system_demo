@@ -97,6 +97,8 @@ class DocumentService:
         return doc
 
     async def list_documents(self, kb_id: UUID) -> list[Document]:
+        if await self._repo.get_kb(kb_id) is None:
+            raise NotFoundError("knowledge base", kb_id)
         return await self._repo.list_documents(kb_id)
 
     async def transition_document(
