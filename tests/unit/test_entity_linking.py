@@ -60,6 +60,15 @@ async def test_fuzzy_fallback_when_exact_empty() -> None:
     assert "年假" in store.calls[1][0]
 
 
+async def test_fuzzy_results_are_deduplicated_by_id() -> None:
+    entity = _entity("e1", "年假政策")
+    store = FakeGraphStore(exact=[], fuzzy=[entity, entity, _entity("e2", "带薪年假")])
+
+    result = await link_seed_entities(store, KB_ID, "年假政策")  # type: ignore[arg-type]
+
+    assert [item.id for item in result] == ["e1", "e2"]
+
+
 async def test_no_terms_returns_empty_without_query() -> None:
     store = FakeGraphStore(exact=[])
     assert await link_seed_entities(store, KB_ID, "，。！") == []  # type: ignore[arg-type]

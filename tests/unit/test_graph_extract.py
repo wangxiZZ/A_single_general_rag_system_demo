@@ -149,3 +149,99 @@ async def test_unknown_entity_type_falls_back() -> None:
     }
     result = await GraphExtractor(FakeLLM(payload)).extract([_chunk("员工")], kb_id=KB_ID)
     assert result.entities[0].type == "其他"
+
+
+async def test_malformed_payload_is_counted_as_failed_chunk() -> None:
+    """模型返回了 JSON 但结构不对：整块作废，不能把半截数据写进图谱。"""
+    result = await GraphExtractor(FakeLLM({"entities": "oops", "relations": []})).extract(
+        [_chunk("员工")], kb_id=KB_ID
+    )
+    assert result.failed_chunks == 1
+    assert result.entities == []
+
+
+async def test_invalid_entity_items_are_dropped_not_crashing() -> None:
+    payload = {
+        "entities": [
+            "不是对象",
+            {"name": "缺 span", "type": "人物"},
+            {"name": "   ", "type": "人物", "span": "员工"},
+            {"name": "员工", "type": "人物", "span": "不存在的词"},
+            {"name": "员工", "type": "人物", "span": "员工"},
+        ],
+        "relations": [],
+    }
+    result = await GraphExtractor(FakeLLM(payload)).extract([_chunk("员工")], kb_id=KB_ID)
+
+    assert len(result.entities) == 1
+    assert result.entities[0].name == "员工"
+    assert result.dropped_spans == 4
+
+
+async def test_aliases_are_normalized_filtered_and_merged() -> None:
+    payload = {
+        "entities": [
+            {
+                "name": "年假政策",
+                "type": "条款",
+                "span": "年假政策",
+                # 非字符串、空串、全角括号后缀都要被规范化或过滤
+                "aliases": [" 年假政策（试行） ", "", 3, "带薪年假"],
+            }
+        ],
+        "relations": [],
+    }
+    chunks = [_chunk("年假政策与带薪年假。", seq=0), _chunk("年假政策", seq=1)]
+    result = await GraphExtractor(FakeLLM(payload)).extract(chunks, kb_id=KB_ID)
+
+    assert len(result.entities) == 1
+    assert result.entities[0].aliases == ("年假政策", "带薪年假")
+    assert len(result.mentions) == 2
+
+
+async def test_relation_requires_known_entities_and_evidence_span() -> None:
+    payload = {
+        "entities": [{"name": "员工", "type": "人物", "span": "员工"}],
+        "relations": [
+            # head 不在本块实体表
+            {"head": "幽灵", "tail": "员工", "relation": "包含", "evidence_span": "员工"},
+            # evidence_span 在原文中找不到
+            {"head": "员工", "tail": "员工", "relation": "包含", "evidence_span": "不存在"},
+            # 非对象
+            "坏数据",
+        ],
+    }
+    result = await GraphExtractor(FakeLLM(payload)).extract([_chunk("员工")], kb_id=KB_ID)
+
+    assert result.relations == []
+    assert result.dropped_relations == 3
+
+
+async def test_one_failed_chunk_does_not_discard_others() -> None:
+    class SelectiveLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def structured_json(self, messages, schema):
+            self.calls += 1
+            if "失败块" in messages[0].content:
+                raise LlmError("boom")
+            return {
+                "entities": [{"name": "员工", "type": "人物", "span": "员工"}],
+                "relations": [],
+            }
+
+        async def chat(self, messages, *, temperature: float = 0.0, max_tokens=None) -> str:
+            return ""
+
+    result = await GraphExtractor(SelectiveLLM()).extract(
+        [_chunk("失败块", seq=0), _chunk("员工", seq=1)], kb_id=KB_ID
+    )
+
+    assert result.failed_chunks == 1
+    assert len(result.entities) == 1
+
+
+def test_find_span_rejects_empty_needle() -> None:
+    assert find_span("年假政策", "") is None
+    assert find_span("年假政策", "   ") is None
