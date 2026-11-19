@@ -89,11 +89,15 @@ class IndexingService:
         if not children:
             raise ValidationError("文档没有子块，无法建索引")
 
-        embedder, vector_store, lexical_index, graph_store, llm = self._require_ports()
-        indexing = replace(document, status=DocumentStatus.INDEXING, error=None)
-        indexing = await self._repo.update_document(kb_id, indexing)
-
+        # 端口校验也放进 try：缺少 EMBED_API_KEY 时索引还没写，但管线此前已经落了
+        # chunk 行与图片；失败口径要求这些也清掉，否则文档 failed 却仍能被 /chunks 读到。
+        ports: tuple[Embedder, VectorStore, LexicalIndex, GraphStore, LLM] | None = None
         try:
+            ports = self._require_ports()
+            embedder, vector_store, lexical_index, graph_store, llm = ports
+            indexing = replace(document, status=DocumentStatus.INDEXING, error=None)
+            indexing = await self._repo.update_document(kb_id, indexing)
+
             await vector_store.delete_by_doc(kb_id, doc_id)
             await lexical_index.delete_by_doc(kb_id, doc_id)
             await graph_store.delete_by_doc(kb_id, doc_id)
@@ -126,16 +130,29 @@ class IndexingService:
             )
             return await self._repo.update_document(kb_id, ready)
         except Exception as exc:
-            # 失败文档不能留下半套索引。
+            # 失败文档不能留下半套索引：三路索引之外，chunk 与图片行也要清掉。
+            # 否则 ADR-022 的验收口径（chunk 行数 = 0）不成立，retry 也会基于旧块重建。
+            # 端口都没拿到时没有索引可删，但 chunk 仍需清。
+            if ports is not None:
+                _, vector_store, lexical_index, graph_store, _ = ports
+                with contextlib.suppress(Exception):
+                    await vector_store.delete_by_doc(kb_id, doc_id)
+                with contextlib.suppress(Exception):
+                    await lexical_index.delete_by_doc(kb_id, doc_id)
+                with contextlib.suppress(Exception):
+                    await graph_store.delete_by_doc(kb_id, doc_id)
             with contextlib.suppress(Exception):
-                await vector_store.delete_by_doc(kb_id, doc_id)
+                await self._repo.delete_chunks(kb_id, doc_id)
             with contextlib.suppress(Exception):
-                await lexical_index.delete_by_doc(kb_id, doc_id)
-            with contextlib.suppress(Exception):
-                await graph_store.delete_by_doc(kb_id, doc_id)
+                await self._repo.replace_images(kb_id, doc_id, [])
             with contextlib.suppress(Exception):
                 await self._repo.update_document(
                     kb_id,
-                    replace(indexing, status=DocumentStatus.FAILED, error=str(exc)[:2000]),
+                    replace(
+                        document,
+                        status=DocumentStatus.FAILED,
+                        error=str(exc)[:2000],
+                        chunk_count=0,
+                    ),
                 )
             raise

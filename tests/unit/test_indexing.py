@@ -106,6 +106,14 @@ class FakeRepository:
         self.statuses.append(doc.status)
         return doc
 
+    async def delete_chunks(self, kb_id: UUID, doc_id: UUID) -> int:
+        count = len(self.chunks)
+        self.chunks.clear()
+        return count
+
+    async def replace_images(self, kb_id: UUID, doc_id: UUID, images) -> None:
+        self.images = list(images)
+
 
 def _chunk() -> Chunk:
     text = "年假政策规定员工。"
@@ -194,13 +202,18 @@ async def test_builds_all_three_indexes_and_marks_ready() -> None:
     assert len(graph.mentions) == 2
 
 
-async def test_missing_llm_fails_before_status_change() -> None:
+async def test_missing_llm_marks_failed_and_cleans_chunks() -> None:
     repo = FakeRepository([_chunk()], _document())
     service, _, _, _ = _service(repo, use_llm=False)
 
     with pytest.raises(ConfigurationError, match="LLM_API_KEY"):
         await service.index_document(KB_ID, DOC_ID)
-    assert repo.statuses == []
+
+    # 配置缺失同样是可重试的失败：文档 failed、chunk 清空，修好 Key 后 retry 即可。
+    assert repo.document.status is DocumentStatus.FAILED
+    assert repo.document.chunk_count == 0
+    assert repo.chunks == []
+    assert repo.statuses == [DocumentStatus.FAILED]
 
 
 async def test_chunker_version_mismatch_is_rejected() -> None:
@@ -221,7 +234,25 @@ async def test_graph_failure_cleans_indexes_and_marks_failed() -> None:
         await service.index_document(KB_ID, DOC_ID)
 
     assert repo.document.status is DocumentStatus.FAILED
+    assert repo.document.chunk_count == 0
+    assert repo.chunks == []
     # 初次清理 + 失败清理
     assert vector.deleted == 2
     assert lexical.deleted == 2
     assert graph.deleted == 2
+
+
+async def test_index_failure_without_embedder_counts_as_failed_and_cleans() -> None:
+    repo = FakeRepository([_chunk()], _document())
+    service, vector, lexical, graph = _service(repo, use_llm=False)
+    service._embedder = None  # type: ignore[attr-defined]
+
+    with pytest.raises(ConfigurationError, match="EMBED_API_KEY"):
+        await service.index_document(KB_ID, DOC_ID)
+
+    assert repo.document.status is DocumentStatus.FAILED
+    assert repo.chunks == []
+    # 端口校验失败时三路都没有写入，因此不需要（也不应该）产生删除调用。
+    assert vector.deleted == 0
+    assert lexical.deleted == 0
+    assert graph.deleted == 0
