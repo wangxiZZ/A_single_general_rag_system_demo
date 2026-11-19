@@ -36,8 +36,10 @@ htmlcov/
 *.p12
 .pypirc
 
-# Claude Code 本机设置（可能含个人权限/路径）；.claude/skills 要提交，不能忽略整个目录
+# Claude Code 本机设置与 Skill 安装副本。
+# 源文件是 skills/rag-kb/SKILL.md；.claude/skills/ 只是按需复制的本机安装位置，不入库。
 .claude/settings.local.json
+.claude/skills/
 
 # 运行期数据：上传件、抽出的图片、日志
 # 用 data/* 而非 data/：直接忽略目录时，目录内的例外规则（!.gitkeep）不生效

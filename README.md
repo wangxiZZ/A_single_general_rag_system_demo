@@ -66,8 +66,8 @@ claude mcp list        # rag-kb: ✓ Connected
 ```
 
 - 三个工具：`list_knowledge_bases`、`search_knowledge_base`、`ask_knowledge_base`；
-- Skill 源文件 `skills/rag-kb/SKILL.md`；安装副本已放在 `.claude/skills/rag-kb/`，
-  在仓库内打开 Claude Code 即可生效；复制到其他项目见安装说明；
+- Skill 源文件 `skills/rag-kb/SKILL.md`；安装副本 `.claude/skills/rag-kb/` 不入库，
+  需要时按安装说明复制一次（`cp skills/rag-kb/SKILL.md .claude/skills/rag-kb/`）；
 - 桌面端 JSON 配置、Windows 下 `uv` 绝对路径、故障排查见 **[docs/mcp-setup.md](docs/mcp-setup.md)**。
 
 MCP 只转发 REST，不连接数据库，配置里不含模型 Key（Key 属于服务端 `.env`）。
