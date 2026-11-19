@@ -135,6 +135,7 @@ services:
     container_name: ragkb-app
     init: true
     environment:
+      APP_NAME: ${APP_NAME:-rag-kb}
       APP_ENV: ${APP_ENV:-dev}
       APP_HOST: 0.0.0.0
       APP_PORT: "8000"
@@ -144,14 +145,18 @@ services:
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
 
       PG_DSN: postgresql://${PG_USER:-rag}:${PG_PASSWORD:-rag_local_pw}@postgres:5432/${PG_DB:-ragkb}
+      PG_POOL_MIN: ${PG_POOL_MIN:-1}
+      PG_POOL_MAX: ${PG_POOL_MAX:-8}
 
       MILVUS_URI: http://milvus:19530
+      MILVUS_TOKEN: ${MILVUS_TOKEN:-}
       MILVUS_COLLECTION: ${MILVUS_COLLECTION:-chunk_vec}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
 
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: ${NEO4J_USER:-neo4j}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-ragkb_neo4j_pw}
+      NEO4J_DATABASE: ${NEO4J_DATABASE:-neo4j}
 
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
@@ -163,15 +168,20 @@ services:
       EMBED_API_KEY: ${EMBED_API_KEY:-}
       EMBED_MODEL: ${EMBED_MODEL:-qwen3.7-text-embedding-flash}
       EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-16}
+      EMBED_MAX_CONCURRENCY: ${EMBED_MAX_CONCURRENCY:-4}
+      EMBED_TIMEOUT_S: ${EMBED_TIMEOUT_S:-60}
 
       VLM_ENABLED: ${VLM_ENABLED:-true}
       VLM_BASE_URL: ${VLM_BASE_URL:-https://maas.qianwenaiapi.com/compatible-mode/v1}
       VLM_API_KEY: ${VLM_API_KEY:-}
       VLM_MODEL: ${VLM_MODEL:-qwen3-vl-plus}
+      VLM_MAX_CONCURRENCY: ${VLM_MAX_CONCURRENCY:-2}
+      VLM_TIMEOUT_S: ${VLM_TIMEOUT_S:-90}
 
       CHUNK_TARGET_TOKENS: ${CHUNK_TARGET_TOKENS:-320}
       CHUNK_OVERLAP_RATIO: ${CHUNK_OVERLAP_RATIO:-0.15}
       PARENT_MAX_TOKENS: ${PARENT_MAX_TOKENS:-1200}
+      CHARS_PER_TOKEN: ${CHARS_PER_TOKEN:-1.5}
       RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K:-20}
       FUSION_RRF_K: ${FUSION_RRF_K:-60}
       RERANK_ENABLED: ${RERANK_ENABLED:-false}
@@ -179,8 +189,13 @@ services:
       RERANK_MODEL: ${RERANK_MODEL:-}
       RERANK_API_KEY: ${RERANK_API_KEY:-}
       RERANK_TIMEOUT_S: ${RERANK_TIMEOUT_S:-60}
+      QA_MAX_CONTEXT_TOKENS: ${QA_MAX_CONTEXT_TOKENS:-6000}
       GRAPH_MAX_HOPS: ${GRAPH_MAX_HOPS:-2}
       GRAPH_SEED_LIMIT: ${GRAPH_SEED_LIMIT:-8}
+      GRAPH_NEIGHBOR_LIMIT: ${GRAPH_NEIGHBOR_LIMIT:-50}
+      HYBRID_WEIGHT_VECTOR: ${HYBRID_WEIGHT_VECTOR:-1.0}
+      HYBRID_WEIGHT_KEYWORD: ${HYBRID_WEIGHT_KEYWORD:-1.0}
+      HYBRID_WEIGHT_GRAPH: ${HYBRID_WEIGHT_GRAPH:-1.0}
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:

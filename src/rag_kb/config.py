@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     # 实测输出 1024 维，与 embedding_dim 的默认值一致；换模型必须同时改维度并重建 collection。
     embed_model: str = "qwen3.7-text-embedding-flash"
     embed_batch_size: int = 16
+    embed_max_concurrency: int = 4
     embed_timeout_s: int = 60
 
     # ---- 多模态（图片描述）----
@@ -82,6 +83,7 @@ class Settings(BaseSettings):
     vlm_api_key: str = ""
     # 该网关不提供 qwen-vl-max；qwen3-vl-plus 是实测可用的生成式多模态模型。
     vlm_model: str = "qwen3-vl-plus"
+    vlm_max_concurrency: int = 2
     vlm_timeout_s: int = 90
     # 关闭时图片仍会入索引，content 退化为"[图片] 无法描述"占位，便于断网调试。
     vlm_enabled: bool = True
@@ -104,15 +106,18 @@ class Settings(BaseSettings):
     rerank_model: str = ""
     rerank_api_key: str = ""
     rerank_timeout_s: int = 60
+    # 回答阶段证据总预算；启动期需校验 >= parent_max_tokens。
+    qa_max_context_tokens: int = 6000
     graph_max_hops: int = 2
     graph_seed_limit: int = 8
+    graph_neighbor_limit: int = 50
+    # 仅 mode=hybrid_weighted 使用；默认相等权重，保留作与 RRF 的对照实验。
+    hybrid_weight_vector: float = 1.0
+    hybrid_weight_keyword: float = 1.0
+    hybrid_weight_graph: float = 1.0
 
     # ---- 上传限制 ----
     max_upload_mb: int = 50
-    allowed_mime: tuple[str, ...] = (
-        "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    )
 
     @property
     def upload_dir(self) -> Path:
