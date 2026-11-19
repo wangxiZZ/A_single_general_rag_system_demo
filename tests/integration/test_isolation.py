@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
-from uuid import uuid4
+from types import SimpleNamespace
+from uuid import UUID, uuid4
 
 import pytest
 
 from rag_kb.application.document_service import DocumentService
 from rag_kb.application.indexing import IndexingService
+from rag_kb.application.ingest_pipeline import IngestPipeline
 from rag_kb.application.kb_service import KbService
 from rag_kb.application.search_service import SearchService
 from rag_kb.config import get_settings
@@ -24,6 +26,7 @@ from rag_kb.domain.models import (
 )
 from rag_kb.infra.milvus.store import MilvusVectorStore
 from rag_kb.infra.neo4j.store import Neo4jGraphStore
+from rag_kb.infra.parsers import build_parser_registry
 from rag_kb.infra.postgres.lexical import PgLexicalIndex
 from rag_kb.infra.postgres.migrations import apply_migrations
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
@@ -70,7 +73,7 @@ class FakeLLM:
                     "head": "年假政策",
                     "tail": "员工",
                     "relation": "适用于",
-                    "evidence_span": "年假政策规定员工",
+                    "evidence_span": "年假",
                 }
             ],
         }
@@ -223,3 +226,154 @@ async def test_kb_isolation_and_deletion(tmp_path: Path) -> None:
         await graph.close()
         await lexical.close()
         await repo.close()
+
+
+class FakeVLM:
+    async def describe_image(
+        self, image: bytes, *, mime: str = "image/png", prompt: str = ""
+    ) -> str:
+        return "一张图"
+
+
+async def _build_ingest_stack(tmp_path: Path, collection_name: str) -> SimpleNamespace:
+    """完整摄取链路：同一份 PDF 要真的解析、分块、写三路索引，才能验证 id 级隔离。"""
+    settings = get_settings()
+    apply_migrations(settings.pg_dsn)
+    repo = PostgresMetadataRepository(settings.pg_dsn, min_size=1, max_size=2)
+    lexical = PgLexicalIndex(settings.pg_dsn, min_size=1, max_size=2)
+    vector = MilvusVectorStore(settings.milvus_uri, collection_name=collection_name)
+    graph = Neo4jGraphStore(
+        settings.neo4j_uri,
+        user=settings.neo4j_user,
+        password=settings.neo4j_password,
+        database=settings.neo4j_database,
+    )
+    await repo.open()
+    await lexical.open()
+    await vector.ensure_collection(4)
+    await graph.ensure_schema()
+
+    storage = LocalStorage(tmp_path)
+    indexer = IndexingService(
+        repo,
+        embedder=FakeEmbedder(),  # type: ignore[arg-type]
+        vector_store=vector,  # type: ignore[arg-type]
+        lexical_index=lexical,  # type: ignore[arg-type]
+        graph_store=graph,  # type: ignore[arg-type]
+        llm=FakeLLM(),  # type: ignore[arg-type]
+        chunker_version="v1",
+        embed_model="fake",
+    )
+    pipeline = IngestPipeline(
+        repo,
+        storage,
+        build_parser_registry(),
+        FakeVLM(),  # type: ignore[arg-type]
+        chunker_version="v1",
+        target_tokens=settings.chunk_target_tokens,
+        overlap_ratio=settings.chunk_overlap_ratio,
+        parent_max_tokens=settings.parent_max_tokens,
+        chars_per_token=settings.chars_per_token,
+        embed_model="fake",
+        indexer=indexer,
+    )
+    documents = DocumentService(
+        repo,
+        storage,
+        vector_store=vector,  # type: ignore[arg-type]
+        lexical_index=lexical,  # type: ignore[arg-type]
+        graph_store=graph,  # type: ignore[arg-type]
+    )
+    kbs = KbService(
+        repo,
+        storage,
+        vector_store=vector,  # type: ignore[arg-type]
+        lexical_index=lexical,  # type: ignore[arg-type]
+        graph_store=graph,  # type: ignore[arg-type]
+    )
+    search = SearchService(
+        repo,
+        embedder=FakeEmbedder(),  # type: ignore[arg-type]
+        vector_store=vector,  # type: ignore[arg-type]
+        lexical_index=lexical,  # type: ignore[arg-type]
+        graph_store=graph,  # type: ignore[arg-type]
+        top_k=10,
+    )
+    return SimpleNamespace(
+        repo=repo,
+        lexical=lexical,
+        vector=vector,
+        graph=graph,
+        documents=documents,
+        kbs=kbs,
+        search=search,
+        pipeline=pipeline,
+    )
+
+
+async def test_same_file_and_entity_names_stay_isolated(tmp_path: Path) -> None:
+    """两个库上传同一份 PDF、抽出同名实体，三通道仍不能互串。"""
+    stack = await _build_ingest_stack(tmp_path, f"chunk_vec_iso_same_{uuid4().hex[:8]}")
+    pdf = Path(__file__).resolve().parents[1] / "fixtures" / "demo" / "employee_handbook.pdf"
+    kb_a = await stack.repo.create_kb(KB(id=uuid4(), name=f"same-a-{uuid4().hex[:6]}"))
+    kb_b = await stack.repo.create_kb(KB(id=uuid4(), name=f"same-b-{uuid4().hex[:6]}"))
+    docs: list[tuple[UUID, UUID]] = []
+    try:
+        for kb in (kb_a, kb_b):
+            document = await stack.documents.upload_document(
+                kb.id, filename=pdf.name, mime="application/pdf", data=pdf.read_bytes()
+            )
+            job = await stack.repo.claim_ingest_job()
+            assert job is not None and job.doc_id == document.id
+            await stack.pipeline.process(job)
+            docs.append((kb.id, document.id))
+
+        doc_a = await stack.documents.get_document(kb_a.id, docs[0][1])
+        doc_b = await stack.documents.get_document(kb_b.id, docs[1][1])
+        assert doc_a.filename == doc_b.filename == pdf.name
+        assert doc_a.sha256 == doc_b.sha256  # 同一文件，只是分属不同库
+        assert doc_a.status is doc_b.status is DocumentStatus.READY
+
+        for mode in (
+            SearchMode.VECTOR,
+            SearchMode.KEYWORD,
+            SearchMode.GRAPH,
+            SearchMode.HYBRID,
+        ):
+            a_hits = await stack.search.search(kb_a.id, "年假政策", mode=mode)
+            b_hits = await stack.search.search(kb_b.id, "年假政策", mode=mode)
+            assert a_hits and b_hits, mode
+            assert {hit.doc_id for hit in a_hits} == {doc_a.id}, mode
+            assert {hit.doc_id for hit in b_hits} == {doc_b.id}, mode
+            # 同一内容的确定性 id 含 kb_id，跨库不能复用主键。
+            assert {hit.chunk_id for hit in a_hits}.isdisjoint({hit.chunk_id for hit in b_hits})
+
+        entities_a = await stack.graph.candidate_entities(kb_a.id, ["年假政策"], 10, contains=True)
+        entities_b = await stack.graph.candidate_entities(kb_b.id, ["年假政策"], 10, contains=True)
+        assert entities_a and entities_b
+        assert {entity.name for entity in entities_a} & {entity.name for entity in entities_b}, (
+            "两库应抽到同名实体，否则隔离断言没有意义"
+        )
+        assert {entity.id for entity in entities_a}.isdisjoint({entity.id for entity in entities_b})
+
+        await stack.documents.delete_document(kb_a.id, doc_a.id)
+        for mode in (
+            SearchMode.VECTOR,
+            SearchMode.KEYWORD,
+            SearchMode.GRAPH,
+            SearchMode.HYBRID,
+        ):
+            assert await stack.search.search(kb_a.id, "年假政策", mode=mode) == [], mode
+            b_hits = await stack.search.search(kb_b.id, "年假政策", mode=mode)
+            assert b_hits, mode
+            assert {hit.doc_id for hit in b_hits} == {doc_b.id}, mode
+    finally:
+        with contextlib.suppress(Exception):
+            await stack.kbs.delete_kb(kb_a.id)
+        with contextlib.suppress(Exception):
+            await stack.kbs.delete_kb(kb_b.id)
+        with contextlib.suppress(Exception):
+            await stack.vector.drop_collection()
+        await stack.graph.close()
+        await stack.lexical.close()
+        await stack.repo.close()
