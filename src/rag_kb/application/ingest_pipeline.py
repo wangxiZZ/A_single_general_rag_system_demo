@@ -19,7 +19,12 @@ from dataclasses import replace
 
 from rag_kb.application.chunking import chunk_document
 from rag_kb.application.image_chunks import build_image_chunks
-from rag_kb.domain.errors import IngestAbortedError, StorageError, ValidationError
+from rag_kb.domain.errors import (
+    IngestAbortedError,
+    NotFoundError,
+    StorageError,
+    ValidationError,
+)
 from rag_kb.domain.models import (
     Document,
     DocumentStatus,
@@ -109,16 +114,27 @@ class IngestPipeline:
         )
         timings["image_ms"] = round((time.perf_counter() - started) * 1000, 1)
 
-        document = await self._require_document(job)
+        try:
+            document = await self._require_document(job)
+        except IngestAbortedError:
+            # 图片描述阶段可能已经写下新文件；删除请求可能发生在保存之后，补一次清理。
+            with contextlib.suppress(Exception):
+                await self._storage.delete_document(job.kb_id, job.doc_id)
+            raise
+
         chunks = [*text_chunks, *image_chunks]
         started = time.perf_counter()
         try:
             await self._repo.replace_images(job.kb_id, job.doc_id, images)
             await self._repo.replace_chunks(job.kb_id, job.doc_id, chunks)
         except Exception:
-            # 图片行可能已写入；清掉，保证失败文档没有脏索引（文件由后续清理兜底）。
+            # 图片行可能已写入；清掉，保证失败文档没有脏索引。
             with contextlib.suppress(Exception):
                 await self._repo.replace_images(job.kb_id, job.doc_id, [])
+            # 如果失败原因是文档在写入过程中被删除，再清理一次文件；普通 DB 故障不动文件。
+            with contextlib.suppress(Exception):
+                if await self._repo.get_document(job.kb_id, job.doc_id) is None:
+                    await self._storage.delete_document(job.kb_id, job.doc_id)
             raise
         timings["persist_ms"] = round((time.perf_counter() - started) * 1000, 1)
 
@@ -131,7 +147,13 @@ class IngestPipeline:
             embed_model=self._embed_model,
             error=None,
         )
-        await self._repo.update_document(job.kb_id, updated)
+        try:
+            await self._repo.update_document(job.kb_id, updated)
+        except NotFoundError as exc:
+            # 删除发生在本阶段与写状态之间：DB 行已被级联清理，补清一次文件。
+            with contextlib.suppress(Exception):
+                await self._storage.delete_document(job.kb_id, job.doc_id)
+            raise IngestAbortedError(job.doc_id) from exc
         return ProcessResult(stage="chunked", timings=timings)
 
     async def _require_document(self, job: IngestJob) -> Document:
