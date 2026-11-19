@@ -30,6 +30,7 @@ from rag_kb.config import Settings, get_settings
 from rag_kb.domain.ports import MetadataRepository
 from rag_kb.infra.health import collect_readiness
 from rag_kb.infra.llm.openai_compat import OpenAICompatVLM
+from rag_kb.infra.milvus.store import MilvusVectorStore
 from rag_kb.infra.parsers import build_parser_registry
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
 from rag_kb.infra.storage.local import LocalStorage
@@ -68,6 +69,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         storage,
         max_upload_mb=settings.max_upload_mb,
     )
+
+    vector_store: MilvusVectorStore | None = None
+    if created_repository is not None:
+        vector_store = MilvusVectorStore(
+            settings.milvus_uri,
+            collection_name=settings.milvus_collection,
+            token=settings.milvus_token,
+        )
+        await vector_store.ensure_collection(settings.embedding_dim)
+        app.state.vector_store = vector_store
 
     worker_task: asyncio.Task[None] | None = None
     stop_event = asyncio.Event()
@@ -126,6 +137,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.exception("ingest worker stopped with error")
     if vlm is not None:
         await vlm.aclose()
+    if vector_store is not None:
+        await vector_store.close()
     if created_repository is not None:
         await created_repository.close()
 
