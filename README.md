@@ -1,2 +1,146 @@
-# A_single_general_rag_system_demo
-Accomplish a General RAG System test demo.
+# 通用 RAG 知识库服务（DEMO）
+
+创建知识库 → 上传 PDF/docx → 解析分块 → 向量/关键词/图谱三路召回 → 基于证据回答。
+以 Server 形式运行，同时提供 REST、Web 管理页、MCP Server 与 Claude Code Skill。
+
+> **当前进度**：M0（骨架与部署）与 M1（知识库/文档管理）已完成。
+> 解析分块、三路召回、回答生成、MCP 在 M2–M5 实现；本文档会随里程碑更新。
+
+## 当前已实现
+
+- Web 管理页：建库/删库、上传/查看状态/删除文档；
+- REST：知识库 CRUD、文档上传/列表/详情/删除；
+- 上传校验：扩展名 + magic bytes、大小限制、同库 sha256 去重（409）；
+- 文档状态机：`pending → parsing → chunked → indexing → ready`，失败可重试；
+- 删除级联：DB 行、分块、任务与磁盘文件一起清理；
+- 健康检查：`/healthz`、`/readyz`（Postgres / Milvus / Neo4j + 模型配置）。
+
+> 检索与问答接口尚未实现（M3/M4），当前上传后的文档会停留在 `pending`，等 M2 的 worker 接入。
+
+## 快速开始
+
+前置条件：
+
+- Docker Desktop（建议分配 ≥ 8 GB 内存）；
+- Python 3.12 + [uv](https://docs.astral.sh/uv/)；
+- 模型 Key：DeepSeek（生成）、Qwen MaaS（Embedding + VLM），在 `.env` 中填写。
+
+```bash
+# 1. 准备配置
+cp .env.example .env
+# 填写 LLM_API_KEY / EMBED_API_KEY / VLM_API_KEY
+
+# 2. 启动依赖与应用
+docker compose up -d --build
+docker compose ps          # 等全部 healthy（Milvus 首次约 60-90s）
+
+# 3. 初始化数据库（首次或迁移后）
+uv run python scripts/migrate.py
+
+# 4. 检查就绪
+curl -s localhost:8000/readyz | python -m json.tool
+```
+
+打开：
+
+- Web 管理页：<http://localhost:8000/web/kbs>
+- OpenAPI 文档：<http://localhost:8000/docs>
+
+### 本机 5432 已被占用
+
+若宿主机已有 PostgreSQL 服务占用 5432，Docker 映射会"显示成功但 localhost 连到本地实例"
+（表现为 role `rag` 不存在）。在 `.env` 中设置：
+
+```dotenv
+PG_PORT=5433
+PG_DSN=postgresql://rag:rag_local_pw@localhost:5433/ragkb
+```
+
+然后执行 `docker compose up -d postgres` 重建端口映射；容器内部仍使用 `postgres:5432`。
+
+## 配置
+
+所有配置集中在 `src/rag_kb/config.py`，并由 `.env` / `docker-compose.yml` 透传。
+容器不直接读取 `.env`，compose 的 `environment` 是唯一通道；`tests/unit/test_config_compose_sync.py`
+会校验三处一致。
+
+| 变量 | 说明 |
+|---|---|
+| `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | 生成与图谱抽取，默认 DeepSeek `deepseek-flash` |
+| `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_API_KEY` | 向量化，默认 Qwen MaaS `qwen3.7-text-embedding-flash`（1024 维） |
+| `VLM_BASE_URL` / `VLM_MODEL` / `VLM_API_KEY` | 图片描述，默认 Qwen MaaS `qwen3-vl-plus` |
+| `EMBEDDING_DIM` | 必须与 embedding 模型输出一致，默认 `1024` |
+| `PG_DSN` / `MILVUS_URI` / `NEO4J_URI` | 三个存储的连接串 |
+| `RERANK_ENABLED` | 重排默认关闭；`RERANK_*` 端点为占位 |
+| `MAX_UPLOAD_MB` | 单文件大小上限，默认 `50` |
+
+## REST 示例
+
+```bash
+# 建库
+curl -s -X POST localhost:8000/api/kbs \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"产品手册","description":"demo"}'
+
+# 上传 PDF
+curl -s -X POST localhost:8000/api/kbs/<kb_id>/documents \
+  -F 'file=@./demo.pdf;type=application/pdf'
+
+# 列表 / 详情 / 删除文档
+curl -s localhost:8000/api/kbs/<kb_id>/documents
+curl -s localhost:8000/api/kbs/<kb_id>/documents/<doc_id>
+curl -s -X DELETE localhost:8000/api/kbs/<kb_id>/documents/<doc_id>
+
+# 删除知识库
+curl -s -X DELETE localhost:8000/api/kbs/<kb_id>
+```
+
+上传重复文件返回 `409` 与 `existing_document_id`；假 docx/伪造扩展名返回 `415`；
+超限返回 `413`。
+
+## 开发
+
+```bash
+uv sync
+uv run pytest tests/unit -q               # 纯单测，无需容器
+uv run pytest -m integration -q           # 集成测试，需容器已启动
+uv run ruff check src tests mcp_server scripts
+uv run ruff format --check src tests
+```
+
+数据库迁移：
+
+```bash
+uv run python scripts/migrate.py          # 宿主直跑，使用 .env 的 PG_DSN
+```
+
+## 目录导览
+
+```
+src/rag_kb/
+├── domain/       纯模型与端口协议（不依赖任何存储）
+├── application/  用例编排：知识库、文档、上传校验
+├── infra/        Postgres / 存储 /（后续）Milvus、Neo4j、解析器、模型客户端
+├── api/          REST 路由、schema、异常映射
+├── web/          Jinja2 + 本地 HTMX 管理页
+└── main.py       装配：连接池、服务注入、路由挂载
+docs/             题目、实施计划、技术选型（ADR）、任务清单、目录说明
+tests/            unit（fake 端口）/ integration（真容器）/ e2e
+```
+
+更详细的模块边界见 [`AGENTS.md`](AGENTS.md) 与 [`docs/项目目录结构说明.md`](docs/项目目录结构说明.md)。
+
+## 已知限制
+
+- 不支持扫描件 OCR、手写内容与旧版 `.doc`；
+- 复杂表格、公式与版式不保证还原；
+- 当前无鉴权、无流式输出，定位为本机/内网 DEMO；
+- docx 无页码与 bbox，引用将使用段落号而非页码；
+- M2–M5 的解析、召回、回答与 MCP 尚未实现。
+
+## 文档
+
+- [实施计划](docs/实施计划.md)
+- [技术选型（ADR）](docs/技术选型文档.md)
+- [项目任务清单](docs/项目任务清单.md)
+- [目录结构说明](docs/项目目录结构说明.md)
