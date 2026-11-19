@@ -30,12 +30,22 @@ dev = [
     "ruff>=0.7",
 ]
 
+[project.optional-dependencies]
+# MCP stdio server 只在接入 Claude Code / 桌面端时安装，主服务镜像不需要协议依赖。
+mcp = ["mcp[cli]>=2,<3"]
+
 [project.scripts]
 rag-kb = "rag_kb.cli:main"
+rag-kb-mcp = "mcp_server.server:main"
 
 [build-system]
-requires = ["uv_build>=0.12.16,<0.13.0"]
-build-backend = "uv_build"
+# uv_build 只支持单一模块根（src/），而 mcp_server/ 按契约放在仓库根目录；
+# hatchling 允许一次声明多个包路径，避免为了打包把目录挪进 src/ 或加一层转发壳。
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rag_kb", "mcp_server"]
 
 [tool.ruff]
 line-length = 100
