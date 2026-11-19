@@ -306,6 +306,15 @@ class Entity:
 
 
 @dataclass(frozen=True, slots=True)
+class Mention:
+    """Chunk → Entity 的提及，span 是 chunk.content 内的字符区间。"""
+
+    chunk_id: str
+    entity_id: str
+    span: tuple[int, int]
+
+
+@dataclass(frozen=True, slots=True)
 class Relation:
     """实体关系边。``chunk_id`` 必须指向可检索的子块，否则无法回溯原文。"""
 

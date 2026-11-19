@@ -28,6 +28,7 @@ from rag_kb.domain.models import (
     GraphEvidence,
     IngestJob,
     LexicalHit,
+    Mention,
     ParsedDocument,
     QueryLog,
     Relation,
@@ -128,6 +129,7 @@ class GraphStore(Protocol):
         doc_id: UUID,
         entities: Sequence[Entity],
         relations: Sequence[Relation],
+        mentions: Sequence[Mention],
     ) -> None: ...
     async def candidate_entities(
         self, kb_id: UUID, terms: Sequence[str], limit: int
