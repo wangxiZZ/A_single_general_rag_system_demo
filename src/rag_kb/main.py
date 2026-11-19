@@ -18,6 +18,8 @@ from fastapi import FastAPI
 from rag_kb import __version__
 from rag_kb.api.routers import health
 from rag_kb.config import Settings, get_settings
+from rag_kb.domain.ports import MetadataRepository
+from rag_kb.infra.postgres.repository import PostgresMetadataRepository
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 目录创建放在 lifespan 而非 import 期：import 期做副作用会让"只想拿 app 对象"
     # 的测试与工具在无写权限的环境里直接失败。
     settings.ensure_dirs()
+
+    # 测试可以注入 fake 仓储；只有应用自己创建时才由应用负责关闭。
+    created_repository: PostgresMetadataRepository | None = None
+    if app.state.repository is None:
+        created_repository = PostgresMetadataRepository(
+            settings.pg_dsn,
+            min_size=settings.pg_pool_min,
+            max_size=settings.pg_pool_max,
+        )
+        await created_repository.open()
+        app.state.repository = created_repository
 
     configured = settings.model_api_configured
     logger.info(
@@ -43,15 +56,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not all(configured.values()):
         logger.warning("存在未配置的模型能力，相关功能将不可用；请检查 .env")
 
-    # TODO(M3): 在此建立 Postgres 连接池、Milvus 客户端、Neo4j driver，做向量维度
-    # fail-fast 校验，并把 ingest worker 作为后台任务拉起。
+    # TODO(M2/M3): 建立 Milvus 客户端与 Neo4j driver，做向量维度 fail-fast 校验，
+    # 并把 ingest worker 作为后台任务拉起。
     yield
 
-    # TODO(M3): 关闭连接池与 driver，等待 worker 退出，保证 Docker stop 时优雅收尾。
+    if created_repository is not None:
+        await created_repository.close()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    """工厂函数：测试可注入自定义 Settings，无需改写环境变量。"""
+def create_app(
+    settings: Settings | None = None,
+    repository: MetadataRepository | None = None,
+) -> FastAPI:
+    """工厂函数：测试可注入自定义 Settings 与 fake 仓储，无需改写环境变量。"""
     resolved = settings or get_settings()
 
     app = FastAPI(
@@ -64,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved
+    app.state.repository = repository
 
     app.include_router(health.router)
 
