@@ -72,6 +72,104 @@ claude mcp list        # rag-kb: ✓ Connected
 
 MCP 只转发 REST，不连接数据库，配置里不含模型 Key（Key 属于服务端 `.env`）。
 
+## 人工验收步骤
+
+以下步骤覆盖「前端入库 → 前端问答 → MCP 调用」三条用户路径，按顺序执行即可完成验收。
+
+### 0. 启动服务
+
+```bash
+docker compose up -d --build
+docker compose ps                    # app / postgres / milvus / neo4j 均为 healthy
+uv run rag-kb migrate                # 首次或迁移后
+curl -s localhost:8000/readyz | python -m json.tool   # ready=true
+uv run python scripts/load_demo.py   # 可选：装载演示库
+```
+
+前端与 REST 在同一个 `app` 服务里，**不需要单独启动前端进程**：
+
+- Web 管理页：<http://localhost:8000/web/kbs>
+- OpenAPI：<http://localhost:8000/docs>
+
+### 1. 前端：文档入库
+
+1. 打开 Web 管理页 → 新建知识库（例如「验收库」）；
+2. 进入详情页，上传 `tests/fixtures/demo/employee_handbook.pdf` 与 `product_guide.docx`；
+3. 观察状态依次变为 `pending → parsing → indexing → ready`，chunk 数 > 0；
+4. 再上传一次同一文件，应提示重复（409 / 已存在），不会产生第二个文档；
+5. 上传 `tests/fixtures/documents/scanned.pdf`，应变为 `failed`，错误含「不支持扫描件 OCR」。
+
+验收判定：两个正常文档 `ready`，重复上传被拦截，扫描件失败且 `error` 可读。
+
+### 2. 前端：检索与问答
+
+在知识库详情页的提问框依次输入：
+
+| 问题 | 预期 |
+|---|---|
+| 年假有几天？怎么申请？ | 返回 5/10/15 天与申请流程，引用 `[1]` 指向 `employee_handbook.pdf` 第 1 页 |
+| 报销多久打款？ | 引用 PDF 第 2 页，答案含「5 个工作日审核、3 个工作日打款」 |
+| 支持哪些文档格式？ | 引用 `product_guide.docx`，显示段落号 + 标题路径，不伪造页码 |
+| 公司的股票代码是多少？ | `no_evidence=true` / 页面显示「知识库中未找到足够依据」，不编造 |
+
+验收判定：引用编号与来源卡片可见，docx 不出现页码，无证据问题明确拒答。
+
+### 3. MCP：Claude Code 调用本机服务
+
+前置：`uv sync --extra mcp`，并且 REST 服务已就绪。
+
+```bash
+# 注册（local 作用域只对当前项目生效；换机器需重做）
+claude mcp add -s local --transport stdio \
+  rag-kb -e RAG_KB_BASE_URL=http://localhost:8000 \
+  -- uv run --extra mcp rag-kb-mcp
+
+claude mcp list        # rag-kb: ... - ✓ Connected
+```
+
+交互式验证：
+
+1. 在仓库根目录打开 Claude Code，执行 `/mcp`，应看到
+   `list_knowledge_bases`、`search_knowledge_base`、`ask_knowledge_base` 三个工具；
+2. 输入「列出所有知识库」→ 触发 `list_knowledge_bases`，返回 `knowledge_bases` 数组；
+3. 输入「在演示知识库里查年假有几天、怎么申请」→ 先 `list_knowledge_bases` 选库，
+   再 `ask_knowledge_base`，回答带 `[1]` 与 PDF 页码；
+4. 输入「公司的股票代码是多少？」→ `no_evidence=true`，不编造。
+
+无头模式验证（不进入交互界面）：
+
+```bash
+claude -p "只调用 mcp__rag-kb__list_knowledge_bases 工具，原样输出返回的 JSON。" \
+  --allowedTools "mcp__rag-kb__list_knowledge_bases"
+
+claude -p "调用 mcp__rag-kb__ask_knowledge_base，参数 kb_id=<kb_id>，question=年假有几天？怎么申请？" \
+  --allowedTools "mcp__rag-kb__ask_knowledge_base"
+```
+
+同时在另一个终端确认服务端确实收到调用：
+
+```bash
+docker compose logs -f app | grep -E "GET /api/kbs|POST /api/kbs"
+```
+
+验收判定：`claude mcp list` 显示 Connected；三个工具可被调用；`ask` 返回引用；
+MCP 配置中没有模型 Key；服务端日志能看到对应 REST 请求。
+
+### 4. 边界抽查（可选）
+
+```bash
+# 删除文档后再检索：三通道均 0 命中
+curl -s -X DELETE localhost:8000/api/kbs/<kb_id>/documents/<doc_id>
+
+# 跨库隔离：用另一个 kb_id 检索刚上传的内容，应返回 []
+curl -s -X POST localhost:8000/api/kbs/<other_kb_id>/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"年假","mode":"hybrid"}'
+```
+
+更完整的边界与指标见 [演示脚本](docs/demo.md)、[检索评测](docs/benchmark.md)、
+[图谱抽取评测](docs/graph-eval.md)。
+
 ## 配置
 
 服务端配置集中在 `src/rag_kb/config.py`，由 `.env` / `docker-compose.yml` 透传。
