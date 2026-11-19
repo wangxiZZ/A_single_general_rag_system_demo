@@ -232,6 +232,20 @@ class ImageRef:
 
 
 @dataclass(frozen=True, slots=True)
+class DocImage:
+    """落盘后的图片记录，绑定回原文档位置。"""
+
+    id: UUID
+    kb_id: UUID
+    doc_id: UUID
+    seq: int
+    page_no: int | None
+    bbox: BBox | None
+    file_path: str
+    caption: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Block:
     """解析器的统一输出单元。
 

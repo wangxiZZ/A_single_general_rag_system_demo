@@ -56,7 +56,7 @@ def estimate_tokens(text: str, chars_per_token: float) -> int:
     return max(1, math.ceil(len(text) / chars_per_token))
 
 
-def _chunk_id(doc_sha256: str, seq: int, chunker_version: str) -> str:
+def make_chunk_id(doc_sha256: str, seq: int, chunker_version: str) -> str:
     raw = f"{doc_sha256}:{seq}:{chunker_version}".encode()
     return hashlib.sha256(raw).hexdigest()[:32]
 
@@ -268,7 +268,7 @@ def chunk_document(
             page_no, page_to, bbox = _span(parent_group)
             kind = _kind(parent_group)
             parent_content = "\n".join(para.text for para in parent_group)
-            parent_id = _chunk_id(doc_sha256, seq, chunker_version)
+            parent_id = make_chunk_id(doc_sha256, seq, chunker_version)
             parent = Chunk(
                 id=parent_id,
                 kb_id=kb_id,
@@ -312,7 +312,7 @@ def chunk_document(
                 child_page, child_page_to, child_bbox = _span(used_paras)
                 chunks.append(
                     Chunk(
-                        id=_chunk_id(doc_sha256, seq, chunker_version),
+                        id=make_chunk_id(doc_sha256, seq, chunker_version),
                         kb_id=kb_id,
                         doc_id=doc_id,
                         parent_id=parent_id,

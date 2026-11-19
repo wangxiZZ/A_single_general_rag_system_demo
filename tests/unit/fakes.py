@@ -13,6 +13,7 @@ from rag_kb.domain.errors import NotFoundError
 from rag_kb.domain.models import (
     KB,
     Chunk,
+    DocImage,
     Document,
     IngestJob,
     IngestJobStatus,
@@ -25,6 +26,7 @@ class FakeMetadataRepository:
         self.kbs: dict[UUID, KB] = {}
         self.documents: dict[UUID, Document] = {}
         self.chunks: dict[UUID, list[Chunk]] = {}
+        self.images: dict[UUID, list[DocImage]] = {}
         self.jobs: list[IngestJob] = []
         self.query_logs: list[QueryLog] = []
 
@@ -47,6 +49,7 @@ class FakeMetadataRepository:
         for doc_id in doc_ids:
             self.documents.pop(doc_id, None)
             self.chunks.pop(doc_id, None)
+            self.images.pop(doc_id, None)
         self.jobs = [job for job in self.jobs if job.doc_id not in doc_ids]
 
     # ---- 文档 ----
@@ -72,6 +75,7 @@ class FakeMetadataRepository:
             raise NotFoundError("document", doc_id)
         del self.documents[doc_id]
         self.chunks.pop(doc_id, None)
+        self.images.pop(doc_id, None)
         self.jobs = [job for job in self.jobs if job.doc_id != doc_id]
 
     async def find_document_by_sha(self, kb_id: UUID, sha256: str) -> Document | None:
@@ -102,6 +106,16 @@ class FakeMetadataRepository:
 
     async def count_chunks(self, kb_id: UUID, doc_id: UUID) -> int:
         return len(await self.list_chunks(kb_id, doc_id))
+
+    # ---- 图片 ----
+    async def replace_images(self, kb_id: UUID, doc_id: UUID, images: list[DocImage]) -> None:
+        self.images[doc_id] = list(images)
+
+    async def list_images(self, kb_id: UUID, doc_id: UUID) -> list[DocImage]:
+        return [image for image in self.images.get(doc_id, []) if image.kb_id == kb_id]
+
+    async def count_images(self, kb_id: UUID, doc_id: UUID) -> int:
+        return len(await self.list_images(kb_id, doc_id))
 
     # ---- 任务 ----
     async def enqueue_ingest_job(self, doc_id: UUID) -> IngestJob:

@@ -12,9 +12,11 @@ from rag_kb.config import get_settings
 from rag_kb.domain.errors import NotFoundError
 from rag_kb.domain.models import (
     KB,
+    BBox,
     Chunk,
     ChunkKind,
     ChunkLevel,
+    DocImage,
     Document,
     DocumentStatus,
     QueryLog,
@@ -93,6 +95,21 @@ async def test_repository_roundtrip_and_isolation() -> None:
         # 跨库隔离：另一个 kb_id 查同一个 chunk id 必须为空。
         assert await repo.get_chunks(uuid4(), [child.id]) == []
 
+        image = DocImage(
+            id=uuid4(),
+            kb_id=kb_id,
+            doc_id=doc_id,
+            seq=0,
+            page_no=1,
+            bbox=BBox(10, 20, 210, 220),
+            file_path=f"images/{kb_id}/{doc_id}/x.png",
+            caption="一张图",
+        )
+        await repo.replace_images(kb_id, doc_id, [image])
+        images = await repo.list_images(kb_id, doc_id)
+        assert images == [image]
+        assert await repo.count_images(kb_id, doc_id) == 1
+
         updated = await repo.update_document(
             kb_id, replace(doc, status=DocumentStatus.CHUNKED, chunk_count=2)
         )
@@ -118,6 +135,7 @@ async def test_repository_roundtrip_and_isolation() -> None:
 
         await repo.delete_document(kb_id, doc_id)
         assert await repo.count_chunks(kb_id, doc_id) == 0
+        assert await repo.count_images(kb_id, doc_id) == 0
         assert await repo.list_documents(kb_id) == []
     finally:
         with contextlib.suppress(NotFoundError):

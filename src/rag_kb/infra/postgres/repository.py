@@ -38,6 +38,7 @@ from rag_kb.domain.models import (
     Chunk,
     ChunkKind,
     ChunkLevel,
+    DocImage,
     Document,
     DocumentStatus,
     IngestJob,
@@ -118,6 +119,20 @@ def _row_to_job(row: dict[str, Any]) -> IngestJob:
         error=row["error"],
         timings=row["timings"] or {},
         claimed_at=row["claimed_at"],
+    )
+
+
+def _row_to_image(row: dict[str, Any]) -> DocImage:
+    bbox = row["bbox"]
+    return DocImage(
+        id=row["id"],
+        kb_id=row["kb_id"],
+        doc_id=row["doc_id"],
+        seq=row["seq"],
+        page_no=row["page_no"],
+        bbox=BBox(**bbox) if bbox else None,
+        file_path=row["file_path"],
+        caption=row["caption"],
     )
 
 
@@ -388,6 +403,62 @@ class PostgresMetadataRepository:
         with self._connection() as conn:
             cur = conn.execute(
                 "SELECT count(*) AS n FROM chunk WHERE kb_id = %s AND doc_id = %s",
+                (kb_id, doc_id),
+            )
+            row = cur.fetchone()
+        return int(row["n"])
+
+    # ---------------------------------------------------------------- 图片
+
+    @_to_thread
+    def replace_images(self, kb_id: UUID, doc_id: UUID, images: Sequence[DocImage]) -> None:
+        with self._connection() as conn, conn.transaction():
+            conn.execute("DELETE FROM doc_image WHERE kb_id = %s AND doc_id = %s", (kb_id, doc_id))
+            if not images:
+                return
+            rows = [
+                (
+                    image.id,
+                    image.kb_id,
+                    image.doc_id,
+                    image.seq,
+                    image.page_no,
+                    _bbox_json(image.bbox),
+                    image.file_path,
+                    image.caption,
+                )
+                for image in sorted(images, key=lambda item: item.seq)
+            ]
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO doc_image (
+                        id, kb_id, doc_id, seq, page_no, bbox, file_path, caption
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    rows,
+                )
+
+    @_to_thread
+    def list_images(self, kb_id: UUID, doc_id: UUID) -> list[DocImage]:
+        with self._connection() as conn:
+            cur = conn.execute(
+                """
+                SELECT * FROM doc_image
+                WHERE kb_id = %s AND doc_id = %s
+                ORDER BY seq
+                """,
+                (kb_id, doc_id),
+            )
+            rows = cur.fetchall()
+        return [_row_to_image(row) for row in rows]
+
+    @_to_thread
+    def count_images(self, kb_id: UUID, doc_id: UUID) -> int:
+        with self._connection() as conn:
+            cur = conn.execute(
+                "SELECT count(*) AS n FROM doc_image WHERE kb_id = %s AND doc_id = %s",
                 (kb_id, doc_id),
             )
             row = cur.fetchone()
