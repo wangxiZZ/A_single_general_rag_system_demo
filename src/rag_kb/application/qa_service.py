@@ -41,6 +41,7 @@ class AnswerResult:
     evidence: list[Evidence]
     no_evidence: bool = False
     attempted_channels: list[str] = field(default_factory=list)
+    query_rewrites: list[str] = field(default_factory=list)
 
 
 class QAService:
@@ -118,8 +119,21 @@ class QAService:
             for index, item in enumerate(candidates, start=1)
         ]
 
-    async def answer(self, kb_id: UUID, question: str, hits: list[SearchHit]) -> AnswerResult:
-        attempted_channels = sorted({channel for hit in hits for channel in hit.channels})
+    async def answer(
+        self,
+        kb_id: UUID,
+        question: str,
+        hits: list[SearchHit],
+        *,
+        attempted_channels: list[str] | None = None,
+        query_rewrites: list[str] | None = None,
+    ) -> AnswerResult:
+        channels = (
+            list(attempted_channels)
+            if attempted_channels is not None
+            else sorted({channel for hit in hits for channel in hit.channels})
+        )
+        rewrites = list(query_rewrites or [])
         evidence = await self.assemble_evidence(kb_id, hits)
         if not evidence:
             return AnswerResult(
@@ -127,7 +141,8 @@ class QAService:
                 citations=[],
                 evidence=[],
                 no_evidence=True,
-                attempted_channels=attempted_channels,
+                attempted_channels=channels,
+                query_rewrites=rewrites,
             )
         if self._llm is None:
             raise ConfigurationError("LLM_API_KEY 未配置，无法生成回答")
@@ -153,14 +168,16 @@ class QAService:
                 citations=[],
                 evidence=evidence,
                 no_evidence=True,
-                attempted_channels=attempted_channels,
+                attempted_channels=channels,
+                query_rewrites=rewrites,
             )
         return AnswerResult(
             answer=answer_raw.strip(),
             citations=valid_citations,
             evidence=evidence,
             no_evidence=False,
-            attempted_channels=attempted_channels,
+            attempted_channels=channels,
+            query_rewrites=rewrites,
         )
 
     @staticmethod

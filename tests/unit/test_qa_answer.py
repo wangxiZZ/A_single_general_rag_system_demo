@@ -120,9 +120,18 @@ async def test_answer_uses_backfilled_evidence_and_returns_citations() -> None:
 
 async def test_no_hits_returns_refusal_without_llm() -> None:
     llm = FakeLLM({"answer": "x", "citations": []})
-    result = await _service(FakeRepo([]), llm).answer(KB_ID, "问题", [])
+    result = await _service(FakeRepo([]), llm).answer(
+        KB_ID,
+        "问题",
+        [],
+        attempted_channels=["vector", "keyword", "graph"],
+        query_rewrites=["问题 近义词"],
+    )
     assert result.no_evidence is True
     assert result.citations == []
+    assert result.attempted_channels == ["vector", "keyword", "graph"]
+    assert result.query_rewrites == ["问题 近义词"]
+    assert result.answer == "知识库中未找到足够依据。"
     assert llm.calls == []
 
 
