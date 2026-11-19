@@ -135,6 +135,23 @@ async def test_chunks_page_shows_structure_and_image_description(
     assert ">12<" in response.text
 
 
+async def test_retry_failed_document_returns_updated_rows(
+    client: AsyncClient, repo: FakeMetadataRepository
+) -> None:
+    kb_id = await _create_kb(client)
+    await client.post(
+        f"/web/kbs/{kb_id}/documents",
+        files={"file": ("a.pdf", b"%PDF-1.4\nretry", "application/pdf")},
+    )
+    doc = next(iter(repo.documents.values()))
+    repo.documents[doc.id] = replace(doc, status=DocumentStatus.FAILED, error="boom")
+
+    response = await client.post(f"/web/kbs/{kb_id}/documents/{doc.id}/retry")
+    assert response.status_code == 200
+    assert "等待处理" in response.text
+    assert repo.documents[doc.id].status is DocumentStatus.PENDING
+
+
 async def test_duplicate_upload_shows_error(client: AsyncClient) -> None:
     kb_id = await _create_kb(client)
     files = {"file": ("a.pdf", b"%PDF-1.4\nsame", "application/pdf")}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -10,7 +11,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from rag_kb.config import Settings
-from rag_kb.domain.models import BBox, Chunk, ChunkKind, ChunkLevel
+from rag_kb.domain.models import BBox, Chunk, ChunkKind, ChunkLevel, DocumentStatus
 from rag_kb.main import create_app
 from tests.unit.fakes import FakeMetadataRepository
 
@@ -128,6 +129,25 @@ async def test_list_chunks_returns_chunk_fields(
     assert chunk["meta"] == {"low_weight": True}
 
     assert (await client.get(f"/api/kbs/{kb['id']}/documents/{uuid4()}/chunks")).status_code == 404
+
+
+async def test_retry_failed_document(client: AsyncClient, repo: FakeMetadataRepository) -> None:
+    kb = await _create_kb(client)
+    upload = await client.post(
+        f"/api/kbs/{kb['id']}/documents",
+        files={"file": ("a.pdf", b"%PDF-1.7\nretry", "application/pdf")},
+    )
+    doc_id = UUID(upload.json()["id"])
+    doc = repo.documents[doc_id]
+    repo.documents[doc_id] = replace(doc, status=DocumentStatus.FAILED, error="boom")
+
+    response = await client.post(f"/api/kbs/{kb['id']}/documents/{doc_id}/retry")
+    assert response.status_code == 202
+    assert response.json()["status"] == "pending"
+    assert response.json()["error"] is None
+
+    # 已回到 pending，不能再次重试
+    assert (await client.post(f"/api/kbs/{kb['id']}/documents/{doc_id}/retry")).status_code == 422
 
 
 async def test_fake_docx_is_rejected_by_magic(client: AsyncClient) -> None:

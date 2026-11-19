@@ -129,6 +129,23 @@ async def upload_document(
     )
 
 
+@router.post("/kbs/{kb_id}/documents/{doc_id}/retry", response_class=HTMLResponse)
+async def retry_document(
+    request: Request,
+    kb_id: UUID,
+    doc_id: UUID,
+    document_service: DocumentDep,
+) -> HTMLResponse:
+    try:
+        await document_service.retry_document(kb_id, doc_id)
+        documents = await document_service.list_documents(kb_id)
+    except NotFoundError:
+        return HTMLResponse("", status_code=404)
+    except DomainError:
+        return HTMLResponse("只有失败文档可以重试", status_code=400)
+    return _render(request, "_documents.html", {"docs": documents, "kb_id": kb_id})
+
+
 @router.get("/kbs/{kb_id}/documents/{doc_id}/chunks", response_class=HTMLResponse)
 async def chunks_page(
     request: Request,

@@ -55,6 +55,15 @@ async def get_document(kb_id: UUID, doc_id: UUID, service: DocumentServiceDep) -
     return DocumentRead.model_validate(await service.get_document(kb_id, doc_id))
 
 
+@router.post(
+    "/kbs/{kb_id}/documents/{doc_id}/retry",
+    response_model=DocumentRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_document(kb_id: UUID, doc_id: UUID, service: DocumentServiceDep) -> DocumentRead:
+    return DocumentRead.model_validate(await service.retry_document(kb_id, doc_id))
+
+
 @router.get(
     "/kbs/{kb_id}/documents/{doc_id}/chunks",
     response_model=list[ChunkRead],
