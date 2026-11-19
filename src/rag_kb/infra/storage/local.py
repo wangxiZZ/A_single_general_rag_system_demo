@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shutil
@@ -113,8 +114,11 @@ class LocalStorage:
     @_to_thread
     def delete_document(self, kb_id: UUID, doc_id: UUID) -> None:
         upload_dir, image_dir = self._document_dirs(kb_id, doc_id)
-        shutil.rmtree(upload_dir, ignore_errors=True)
-        shutil.rmtree(image_dir, ignore_errors=True)
+        for directory in (upload_dir, image_dir):
+            shutil.rmtree(directory, ignore_errors=True)
+            # 删除空的知识库目录，避免 data/ 下积累空目录；目录非空时 rmdir 会失败，忽略即可。
+            with contextlib.suppress(OSError):
+                directory.parent.rmdir()
 
 
 __all__ = ["LocalStorage", "safe_ext", "safe_filename"]
