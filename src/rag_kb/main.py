@@ -12,8 +12,11 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from rag_kb import __version__
 from rag_kb.api.errors import register_exception_handlers
@@ -24,8 +27,11 @@ from rag_kb.config import Settings, get_settings
 from rag_kb.domain.ports import MetadataRepository
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
 from rag_kb.infra.storage.local import LocalStorage
+from rag_kb.web import routes as web_routes
 
 logger = logging.getLogger(__name__)
+
+WEB_STATIC_DIR = Path(__file__).resolve().parent / "web" / "static"
 
 
 @asynccontextmanager
@@ -96,21 +102,16 @@ def create_app(
     app.state.settings = resolved
     app.state.repository = repository
 
+    app.mount("/static", StaticFiles(directory=WEB_STATIC_DIR), name="static")
     app.include_router(health.router)
     app.include_router(kbs.router, prefix="/api")
     app.include_router(documents.router, prefix="/api")
+    app.include_router(web_routes.router)
     register_exception_handlers(app)
 
     @app.get("/", include_in_schema=False)
-    def index() -> dict[str, object]:
-        # M1 会替换为 Web 管理页；在此之前给出可用的自描述入口，避免访问根路径 404。
-        return {
-            "name": resolved.app_name,
-            "version": __version__,
-            "docs": "/docs",
-            "health": "/healthz",
-            "ready": "/readyz",
-        }
+    def index() -> RedirectResponse:
+        return RedirectResponse("/web/kbs", status_code=303)
 
     return app
 

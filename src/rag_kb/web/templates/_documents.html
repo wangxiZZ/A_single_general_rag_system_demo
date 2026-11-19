@@ -1,0 +1,22 @@
+<div id="documents">
+  {% if docs %}
+  <table>
+    <thead>
+      <tr>
+        <th>文件名</th>
+        <th>状态</th>
+        <th>大小(B)</th>
+        <th>分块数</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for doc in docs %}
+        {% include "_document_row.html" %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">还没有文档。</p>
+  {% endif %}
+</div>

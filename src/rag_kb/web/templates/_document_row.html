@@ -1,0 +1,17 @@
+<tr id="doc-{{ doc.id }}"
+  {% if doc.status.value not in ('ready', 'failed') %}
+  hx-get="/web/kbs/{{ kb_id }}/documents/{{ doc.id }}/status"
+  hx-trigger="every 2s"
+  hx-swap="outerHTML"
+  {% endif %}>
+  <td>{{ doc.filename }}</td>
+  <td><span class="badge status-{{ doc.status.value }}">{{ status_labels[doc.status.value] }}</span></td>
+  <td>{{ doc.size }}</td>
+  <td>{{ doc.chunk_count }}</td>
+  <td class="right">
+    <form hx-post="/web/kbs/{{ kb_id }}/documents/{{ doc.id }}/delete"
+          hx-target="#documents" hx-swap="outerHTML">
+      <button class="danger" type="submit">删除</button>
+    </form>
+  </td>
+</tr>

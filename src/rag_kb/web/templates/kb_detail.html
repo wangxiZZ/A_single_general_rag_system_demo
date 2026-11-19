@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ kb.name }} · RAG 知识库{% endblock %}
+{% block content %}
+<p><a href="/web/kbs">← 返回知识库列表</a></p>
+<div class="hero">
+  <h1>{{ kb.name }}</h1>
+  <p class="muted">{{ kb.description }}</p>
+</div>
+
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+<section class="card">
+  <h2>上传文档</h2>
+  <form method="post" action="/web/kbs/{{ kb.id }}/documents" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".pdf,.docx" required>
+    <button type="submit">上传</button>
+  </form>
+  <p class="muted">支持带可提取文本的 PDF 与 .docx；扫描件不支持 OCR。</p>
+</section>
+
+<section class="card">
+  <h2>文档</h2>
+  {% include "_documents.html" %}
+</section>
+{% endblock %}

@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -18,21 +17,9 @@ from fastapi import APIRouter, File, UploadFile, status
 
 from rag_kb.api.deps import DocumentServiceDep
 from rag_kb.api.schemas import DocumentRead
-from rag_kb.domain.errors import UnsupportedFileTypeError
+from rag_kb.application.upload_validation import validate_upload
 
 router = APIRouter(tags=["documents"])
-
-_MIME_BY_EXT = {
-    ".pdf": "application/pdf",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-
-
-def _validate_magic(ext: str, data: bytes, filename: str) -> None:
-    # docx 本质是 zip；只接受 PK\x03\x04（含实际内容），空 zip 不算 docx。
-    ok = data.startswith(b"%PDF-") if ext == ".pdf" else data.startswith(b"PK\x03\x04")
-    if not ok:
-        raise UnsupportedFileTypeError(filename, _MIME_BY_EXT[ext])
 
 
 @router.post(
@@ -46,17 +33,13 @@ async def upload_document(
     file: Annotated[UploadFile, File()],
 ) -> DocumentRead:
     filename = file.filename or "upload.bin"
-    ext = Path(filename).suffix.lower()
-    if ext not in _MIME_BY_EXT:
-        raise UnsupportedFileTypeError(filename, file.content_type or "")
-
     data = await file.read()
-    _validate_magic(ext, data, filename)
+    mime = validate_upload(filename, file.content_type, data)
 
     doc = await service.upload_document(
         kb_id,
         filename=filename,
-        mime=file.content_type or _MIME_BY_EXT[ext],
+        mime=mime,
         data=data,
     )
     return DocumentRead.model_validate(doc)

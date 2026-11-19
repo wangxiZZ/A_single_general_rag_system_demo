@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}知识库 · RAG 知识库{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>知识库</h1>
+  <p class="muted">创建知识库、上传 PDF/docx，随后在 Web 或 Claude Code 中检索。</p>
+</section>
+
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+<section class="card">
+  <h2>新建知识库</h2>
+  <form method="post" action="/web/kbs" class="inline-form">
+    <label>名称
+      <input name="name" required maxlength="200" placeholder="例如：产品手册">
+    </label>
+    <label>描述
+      <input name="description" placeholder="可选">
+    </label>
+    <button type="submit">创建</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>全部知识库</h2>
+  {% if kbs %}
+  <table>
+    <thead>
+      <tr><th>名称</th><th>描述</th><th>创建时间</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for kb in kbs %}
+      <tr>
+        <td><a href="/web/kbs/{{ kb.id }}">{{ kb.name }}</a></td>
+        <td>{{ kb.description }}</td>
+        <td class="muted">{{ kb.created_at }}</td>
+        <td class="right">
+          <form method="post" action="/web/kbs/{{ kb.id }}/delete">
+            <button class="danger" type="submit">删除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">还没有知识库。</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}RAG 知识库{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/web/kbs">RAG 知识库</a>
+    <nav><a href="/docs">API 文档</a><a href="/readyz">就绪状态</a></nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
