@@ -13,6 +13,7 @@ import pytest
 
 pytest.importorskip("mcp")
 
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp_server import server
 
 
@@ -78,7 +79,7 @@ async def test_ask_forwards_question() -> None:
 async def test_error_detail_is_surfaced() -> None:
     _use(lambda request: httpx.Response(404, json={"detail": "知识库不存在"}))
 
-    with pytest.raises(RuntimeError, match="404：知识库不存在"):
+    with pytest.raises(ToolError, match="404：知识库不存在"):
         await server.search_knowledge_base("missing", "年假")
 
 
@@ -87,7 +88,7 @@ async def test_connect_error_has_actionable_message() -> None:
         raise httpx.ConnectError("refused", request=request)
 
     _use(handler)
-    with pytest.raises(RuntimeError, match="无法连接 RAG 知识库服务"):
+    with pytest.raises(ToolError, match="无法连接 RAG 知识库服务"):
         await server.list_knowledge_bases()
 
 
@@ -96,5 +97,5 @@ async def test_timeout_has_actionable_message() -> None:
         raise httpx.ReadTimeout("slow", request=request)
 
     _use(handler)
-    with pytest.raises(RuntimeError, match="请求超时"):
+    with pytest.raises(ToolError, match="请求超时"):
         await server.list_knowledge_bases()

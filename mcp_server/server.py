@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 DEFAULT_BASE_URL = "http://localhost:8000"
 DEFAULT_TIMEOUT = 30.0
@@ -49,26 +50,27 @@ def _timeout() -> float:
 async def _request(method: str, path: str, *, json: dict[str, Any] | None = None) -> Any:
     """调用 REST 并把失败翻译成模型能读懂的文本。
 
-    不吞异常：错误信息里保留 HTTP 状态码与服务端 detail，让模型（或用户）能判断
-    是「知识库不存在」「服务没启动」还是「参数不合法」，而不是看到一句 "request failed"。
+    异常必须用 ``ToolError`` 而不是普通 ``RuntimeError``：MCP SDK 会把未知异常统一
+    收敛成 "Error executing tool ..."，服务端 detail 只留在日志里，客户端（模型）看不到
+    究竟是「知识库不存在」还是「服务没启动」。``ToolError`` 的文本会原样返回。
     """
     url = f"{_base_url()}{path}"
     try:
         async with httpx.AsyncClient(timeout=_timeout(), transport=_transport) as client:
             response = await client.request(method, url, json=json)
     except httpx.ConnectError as exc:
-        raise RuntimeError(
+        raise ToolError(
             f"无法连接 RAG 知识库服务（{url}）。请确认服务已启动，"
             "或通过 RAG_KB_BASE_URL 指定正确地址。"
         ) from exc
     except httpx.TimeoutException as exc:
-        raise RuntimeError(f"请求超时：{url}（{_timeout()}s）") from exc
+        raise ToolError(f"请求超时：{url}（{_timeout()}s）") from exc
 
     if response.status_code >= 400:
         detail = response.text
         with contextlib.suppress(ValueError):
             detail = response.json().get("detail", detail)
-        raise RuntimeError(f"RAG 服务返回 {response.status_code}：{detail}")
+        raise ToolError(f"RAG 服务返回 {response.status_code}：{detail}")
 
     if response.status_code == 204:
         return None
