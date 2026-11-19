@@ -24,8 +24,10 @@ from rag_kb import __version__
 from rag_kb.api.errors import register_exception_handlers
 from rag_kb.api.routers import documents, health, kbs, search
 from rag_kb.application.document_service import DocumentService
+from rag_kb.application.indexing import IndexingService
 from rag_kb.application.ingest_pipeline import IngestPipeline
 from rag_kb.application.kb_service import KbService
+from rag_kb.application.reindex import ReindexService
 from rag_kb.application.search_service import SearchService
 from rag_kb.config import Settings, get_settings
 from rag_kb.domain.ports import MetadataRepository
@@ -71,12 +73,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     repository: MetadataRepository = app.state.repository
     storage = LocalStorage(settings.data_dir)
-    app.state.kb_service = KbService(repository, storage)
-    app.state.document_service = DocumentService(
-        repository,
-        storage,
-        max_upload_mb=settings.max_upload_mb,
-    )
 
     vector_store: MilvusVectorStore | None = None
     if created_repository is not None:
@@ -108,6 +104,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         await graph_store.ensure_schema()
         app.state.graph_store = graph_store
+
+    app.state.kb_service = KbService(
+        repository,
+        storage,
+        vector_store=vector_store,
+        lexical_index=lexical_index,
+        graph_store=graph_store,
+    )
+    app.state.document_service = DocumentService(
+        repository,
+        storage,
+        max_upload_mb=settings.max_upload_mb,
+        vector_store=vector_store,
+        lexical_index=lexical_index,
+        graph_store=graph_store,
+    )
 
     embedder: OpenAICompatEmbedder | None = None
     if settings.embed_api_key:
@@ -151,6 +163,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             },
         )
 
+    indexer = IndexingService(
+        repository,
+        embedder=embedder,
+        vector_store=vector_store,
+        lexical_index=lexical_index,
+        graph_store=graph_store,
+        llm=llm,
+        chunker_version=settings.chunker_version,
+        embed_model=settings.embed_model,
+    )
+    if app.state.reindex_service is None:
+        app.state.reindex_service = ReindexService(repository, indexer)
+
     worker_task: asyncio.Task[None] | None = None
     stop_event = asyncio.Event()
     vlm: OpenAICompatVLM | None = None
@@ -175,6 +200,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             parent_max_tokens=settings.parent_max_tokens,
             chars_per_token=settings.chars_per_token,
             embed_model=settings.embed_model,
+            indexer=indexer,
         )
         worker = IngestWorker(repository, pipeline.process, poll_interval_s=1.0)
         worker_task = asyncio.create_task(worker.run(stop_event), name="ingest-worker")
@@ -228,6 +254,7 @@ def create_app(
     *,
     start_worker: bool = True,
     search_service: SearchService | None = None,
+    reindex_service: ReindexService | None = None,
 ) -> FastAPI:
     """工厂函数：测试可注入自定义 Settings / fake 仓储，并关闭后台 worker。"""
     resolved = settings or get_settings()
@@ -244,6 +271,8 @@ def create_app(
     app.state.settings = resolved
     app.state.repository = repository
     app.state.search_service = search_service
+    app.state.reindex_service = reindex_service
+    app.state.reindex_tasks = {}
     app.state.start_worker = start_worker
     app.state.readiness_probe = lambda: collect_readiness(resolved)
 

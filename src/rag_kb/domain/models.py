@@ -129,8 +129,9 @@ class Document:
 class Chunk:
     """可回溯的分块。
 
-    ``id`` 由 ``sha256(doc_sha256:seq:chunker_version)`` 确定性生成，保证重跑幂等与
-    评测金标可复现；``level`` 决定是否进索引，``meta`` 只放低权重/降级标记等附属信息。
+    ``id`` 由 ``sha256(kb_id:doc_id:seq:chunker_version)`` 确定性生成，保证重跑幂等与
+    评测金标可复现，并避免同文件多库上传撞主键；``level`` 决定是否进索引，
+    ``meta`` 只放低权重/降级标记等附属信息。
     """
 
     id: str

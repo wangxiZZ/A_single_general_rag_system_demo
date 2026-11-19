@@ -24,4 +24,5 @@ def test_help_lists_commands(capsys) -> None:
     output = capsys.readouterr().out
     assert "migrate" in output
     assert "demo" in output
+    assert "reindex" in output
     assert "serve" in output

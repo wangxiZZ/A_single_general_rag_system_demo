@@ -19,6 +19,7 @@ from dataclasses import replace
 
 from rag_kb.application.chunking import chunk_document
 from rag_kb.application.image_chunks import build_image_chunks
+from rag_kb.application.indexing import IndexingService
 from rag_kb.domain.errors import (
     IngestAbortedError,
     NotFoundError,
@@ -48,6 +49,7 @@ class IngestPipeline:
         parent_max_tokens: int,
         chars_per_token: float,
         embed_model: str = "",
+        indexer: IndexingService | None = None,
     ) -> None:
         self._repo = repository
         self._storage = storage
@@ -59,6 +61,7 @@ class IngestPipeline:
         self._parent_max_tokens = parent_max_tokens
         self._chars_per_token = chars_per_token
         self._embed_model = embed_model
+        self._indexer = indexer
 
     async def process(self, job: IngestJob) -> ProcessResult:
         timings: dict[str, object] = {}
@@ -154,6 +157,10 @@ class IngestPipeline:
             with contextlib.suppress(Exception):
                 await self._storage.delete_document(job.kb_id, job.doc_id)
             raise IngestAbortedError(job.doc_id) from exc
+
+        if self._indexer is not None:
+            await self._indexer.index_document(job.kb_id, job.doc_id)
+            return ProcessResult(stage="ready", timings=timings)
         return ProcessResult(stage="chunked", timings=timings)
 
     async def _require_document(self, job: IngestJob) -> Document:

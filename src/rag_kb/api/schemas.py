@@ -67,6 +67,16 @@ class SearchRequest(BaseModel):
     rerank: bool = False
 
 
+class ReindexAccepted(BaseModel):
+    task_id: str
+    status: str = "accepted"
+
+
+class ReindexStatus(BaseModel):
+    task_id: str
+    status: str
+
+
 class BBoxRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -140,7 +140,7 @@ async def build_image_chunks(
         seq = next_seq + index
         image_chunks.append(
             Chunk(
-                id=make_chunk_id(doc_sha256, seq, chunker_version),
+                id=make_chunk_id(kb_id, doc_id, seq, chunker_version),
                 kb_id=kb_id,
                 doc_id=doc_id,
                 parent_id=parent.id if parent else None,

@@ -119,6 +119,33 @@ def test_long_sentence_falls_back_to_hard_split() -> None:
     assert all(len(chunk.content) <= 10 for chunk in children)
 
 
+def test_chunk_ids_include_kb_and_doc_identity() -> None:
+    blocks = [_block("同一份内容。", 0, 0)]
+    first = chunk_document(
+        blocks,
+        kb_id=KB_ID,
+        doc_id=uuid4(),
+        doc_sha256=SHA,
+        chunker_version="v1",
+        target_tokens=20,
+        overlap_ratio=0.0,
+        parent_max_tokens=100,
+        chars_per_token=1.0,
+    )
+    second = chunk_document(
+        blocks,
+        kb_id=KB_ID,
+        doc_id=uuid4(),
+        doc_sha256=SHA,
+        chunker_version="v1",
+        target_tokens=20,
+        overlap_ratio=0.0,
+        parent_max_tokens=100,
+        chars_per_token=1.0,
+    )
+    assert {chunk.id for chunk in first}.isdisjoint({chunk.id for chunk in second})
+
+
 def test_chunk_ids_are_deterministic() -> None:
     blocks = [_block("一段文本。", 0, 0)]
     first = _chunks(blocks)

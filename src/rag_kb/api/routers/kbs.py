@@ -5,12 +5,13 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+import asyncio
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, Request, status
 
-from rag_kb.api.deps import KbServiceDep
-from rag_kb.api.schemas import KBCreate, KBRead
+from rag_kb.api.deps import KbServiceDep, ReindexServiceDep
+from rag_kb.api.schemas import KBCreate, KBRead, ReindexAccepted, ReindexStatus
 
 router = APIRouter(prefix="/kbs", tags=["knowledge bases"])
 
@@ -34,3 +35,27 @@ async def get_kb(kb_id: UUID, service: KbServiceDep) -> KBRead:
 @router.delete("/{kb_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_kb(kb_id: UUID, service: KbServiceDep) -> None:
     await service.delete_kb(kb_id)
+
+
+@router.post("/{kb_id}/reindex", status_code=status.HTTP_202_ACCEPTED)
+async def reindex_kb(
+    kb_id: UUID,
+    request: Request,
+    kb_service: KbServiceDep,
+    reindex_service: ReindexServiceDep,
+) -> ReindexAccepted:
+    # 先确认知识库存在，避免后台任务静默跑空。
+    await kb_service.get_kb(kb_id)
+    task_id = uuid4().hex
+    tasks: dict[str, asyncio.Task[object]] = request.app.state.reindex_tasks
+    task = asyncio.create_task(reindex_service.reindex_kb(kb_id), name=f"reindex-{task_id}")
+    tasks[task_id] = task
+    return ReindexAccepted(task_id=task_id)
+
+
+@router.get("/{kb_id}/reindex/{task_id}", response_model=ReindexStatus)
+async def reindex_status(kb_id: UUID, task_id: str, request: Request) -> ReindexStatus:
+    task = request.app.state.reindex_tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="reindex task 不存在")
+    return ReindexStatus(task_id=task_id, status="done" if task.done() else "running")

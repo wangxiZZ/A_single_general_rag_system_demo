@@ -117,6 +117,7 @@ uv run ruff format --check src tests
 ```bash
 uv run rag-kb migrate                     # 宿主直跑，使用 .env 的 PG_DSN
 uv run rag-kb demo                        # 通过 REST 建演示库并上传固定夹具
+uv run rag-kb reindex --kb <kb_id>        # 从 chunk 表重建三路索引
 ```
 
 ## 目录导览

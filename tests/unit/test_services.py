@@ -140,6 +140,59 @@ async def test_delete_kb_cascades_documents_and_files(
     assert repo.jobs == []
 
 
+class RecordingIndex:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, object]] = []
+
+    async def delete_by_doc(self, kb_id, doc_id) -> int:
+        self.calls.append((kb_id, doc_id))
+        return 1
+
+
+async def test_delete_document_cleans_all_indexes(
+    kb_service: KbService,
+    repo: FakeMetadataRepository,
+    storage: FakeStorage,
+) -> None:
+    kb = await kb_service.create_kb("测试库")
+    vector, lexical, graph = RecordingIndex(), RecordingIndex(), RecordingIndex()
+    service = DocumentService(
+        repo,
+        storage,
+        vector_store=vector,  # type: ignore[arg-type]
+        lexical_index=lexical,  # type: ignore[arg-type]
+        graph_store=graph,  # type: ignore[arg-type]
+    )
+    doc = await service.upload_document(kb.id, filename="a.pdf", mime="application/pdf", data=b"x")
+
+    await service.delete_document(kb.id, doc.id)
+
+    for port in (vector, lexical, graph):
+        assert port.calls == [(kb.id, doc.id)]
+
+
+async def test_delete_kb_cleans_all_indexes(
+    repo: FakeMetadataRepository, storage: FakeStorage
+) -> None:
+    vector, lexical, graph = RecordingIndex(), RecordingIndex(), RecordingIndex()
+    service = KbService(
+        repo,
+        storage,
+        vector_store=vector,  # type: ignore[arg-type]
+        lexical_index=lexical,  # type: ignore[arg-type]
+        graph_store=graph,  # type: ignore[arg-type]
+    )
+    kb = await service.create_kb("测试库")
+    doc = await DocumentService(repo, storage).upload_document(
+        kb.id, filename="a.pdf", mime="application/pdf", data=b"x"
+    )
+
+    await service.delete_kb(kb.id)
+
+    for port in (vector, lexical, graph):
+        assert port.calls == [(kb.id, doc.id)]
+
+
 async def test_transition_rules_are_enforced(
     kb_service: KbService, doc_service: DocumentService, repo: FakeMetadataRepository
 ) -> None:

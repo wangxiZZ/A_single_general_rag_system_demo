@@ -19,7 +19,13 @@ from rag_kb.domain.errors import (
     ValidationError,
 )
 from rag_kb.domain.models import Chunk, Document, DocumentStatus
-from rag_kb.domain.ports import MetadataRepository, Storage
+from rag_kb.domain.ports import (
+    GraphStore,
+    LexicalIndex,
+    MetadataRepository,
+    Storage,
+    VectorStore,
+)
 
 
 class DocumentService:
@@ -29,10 +35,16 @@ class DocumentService:
         storage: Storage,
         *,
         max_upload_mb: int = 50,
+        vector_store: VectorStore | None = None,
+        lexical_index: LexicalIndex | None = None,
+        graph_store: GraphStore | None = None,
     ) -> None:
         self._repo = repository
         self._storage = storage
         self._max_upload_mb = max_upload_mb
+        self._vector = vector_store
+        self._lexical = lexical_index
+        self._graph = graph_store
 
     async def upload_document(
         self,
@@ -141,6 +153,12 @@ class DocumentService:
 
     async def delete_document(self, kb_id: UUID, doc_id: UUID) -> None:
         await self.get_document(kb_id, doc_id)
+        if self._vector is not None:
+            await self._vector.delete_by_doc(kb_id, doc_id)
+        if self._lexical is not None:
+            await self._lexical.delete_by_doc(kb_id, doc_id)
+        if self._graph is not None:
+            await self._graph.delete_by_doc(kb_id, doc_id)
         # DB 是权威数据；文件清理失败会向上抛，但不会让文档"复活"。
         await self._repo.delete_document(kb_id, doc_id)
         await self._storage.delete_document(kb_id, doc_id)

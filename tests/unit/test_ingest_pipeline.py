@@ -98,6 +98,7 @@ def _pipeline(
     parser: FakeParser,
     *,
     vlm=None,
+    indexer=None,
 ) -> IngestPipeline:
     return IngestPipeline(
         repo,
@@ -110,6 +111,7 @@ def _pipeline(
         parent_max_tokens=200,
         chars_per_token=1.0,
         embed_model="qwen-test",
+        indexer=indexer,
     )
 
 
@@ -159,6 +161,29 @@ async def test_pipeline_aborts_when_document_deleted() -> None:
 
     with pytest.raises(IngestAbortedError):
         await _pipeline(repo, storage, FakeParser(_parsed())).process(job)
+
+
+class FakeIndexer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, object]] = []
+
+    async def index_document(self, kb_id, doc_id):
+        self.calls.append((kb_id, doc_id))
+        return None
+
+
+async def test_pipeline_hands_off_to_indexer_and_reports_ready() -> None:
+    repo = FakeMetadataRepository()
+    storage = FakeStorage()
+    _, _, job = await _seed(repo, storage)
+    indexer = FakeIndexer()
+
+    result = await _pipeline(
+        repo, storage, FakeParser(_parsed()), vlm=FakeVLM(), indexer=indexer
+    ).process(job)
+
+    assert result.stage == "ready"
+    assert indexer.calls == [(job.kb_id, job.doc_id)]
 
 
 async def test_pipeline_propagates_parse_error_without_dirty_index() -> None:

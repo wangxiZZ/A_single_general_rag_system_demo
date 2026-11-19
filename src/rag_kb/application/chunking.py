@@ -7,7 +7,8 @@
 - **子块**在父块内按句子打包，目标 ``chunk_target_tokens``、重叠 ``overlap_ratio``；
   不切断句子，也不跨父块——跨父块的重叠会让证据归属变得模糊。
 - **char_start/char_end** 映射回原文串联文本；子块内容会加标题前缀，但偏移只指向正文。
-- **chunk_id** 由 ``sha256(doc_sha256:seq:chunker_version)`` 确定性生成，保证重跑幂等。
+- **chunk_id** 由 ``sha256(kb_id:doc_id:seq:chunker_version)`` 确定性生成，保证重跑幂等，
+  同时避免同一文件上传到多个知识库时撞主键。
 
 图片块不在这里处理：它需要 VLM 描述与图片落盘（M2-05），由后续步骤基于同一 Block
 序列构造，避免这里引入模型调用。
@@ -56,8 +57,13 @@ def estimate_tokens(text: str, chars_per_token: float) -> int:
     return max(1, math.ceil(len(text) / chars_per_token))
 
 
-def make_chunk_id(doc_sha256: str, seq: int, chunker_version: str) -> str:
-    raw = f"{doc_sha256}:{seq}:{chunker_version}".encode()
+def make_chunk_id(kb_id: UUID, doc_id: UUID, seq: int, chunker_version: str) -> str:
+    """确定性 chunk id。
+
+    必须包含 kb_id/doc_id：只拿 doc_sha256 会让"同一文件上传到两个知识库"产生相同
+    chunk 主键，第二个文档直接撞唯一约束（实测踩过）。
+    """
+    raw = f"{kb_id}:{doc_id}:{seq}:{chunker_version}".encode()
     return hashlib.sha256(raw).hexdigest()[:32]
 
 
@@ -268,7 +274,7 @@ def chunk_document(
             page_no, page_to, bbox = _span(parent_group)
             kind = _kind(parent_group)
             parent_content = "\n".join(para.text for para in parent_group)
-            parent_id = make_chunk_id(doc_sha256, seq, chunker_version)
+            parent_id = make_chunk_id(kb_id, doc_id, seq, chunker_version)
             parent = Chunk(
                 id=parent_id,
                 kb_id=kb_id,
@@ -312,7 +318,7 @@ def chunk_document(
                 child_page, child_page_to, child_bbox = _span(used_paras)
                 chunks.append(
                     Chunk(
-                        id=make_chunk_id(doc_sha256, seq, chunker_version),
+                        id=make_chunk_id(kb_id, doc_id, seq, chunker_version),
                         kb_id=kb_id,
                         doc_id=doc_id,
                         parent_id=parent_id,

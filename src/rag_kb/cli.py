@@ -62,6 +62,45 @@ def _wait_until_chunked(
     return False
 
 
+def _reindex(kb_id: str, base_url: str | None) -> int:
+    settings = get_settings()
+    base = (base_url or f"http://localhost:{settings.app_port}").rstrip("/") + "/api"
+    try:
+        with httpx.Client(timeout=60) as client:
+            response = client.post(f"{base}/kbs/{kb_id}/reindex")
+            response.raise_for_status()
+            task_id = response.json().get("task_id")
+            print(f"reindex accepted: {task_id}")
+
+            # 先等后台任务真正结束；否则旧状态的 ready 文档会让下面的轮询立即返回。
+            for _ in range(240):
+                status_response = client.get(f"{base}/kbs/{kb_id}/reindex/{task_id}")
+                if status_response.status_code == 404:
+                    break
+                if status_response.json()["status"] == "done":
+                    break
+                time.sleep(0.5)
+
+            for _ in range(240):
+                documents = client.get(f"{base}/kbs/{kb_id}/documents").json()
+                active = [
+                    doc
+                    for doc in documents
+                    if doc["status"] in {"pending", "parsing", "chunked", "indexing"}
+                ]
+                if not active:
+                    failed = [doc for doc in documents if doc["status"] == "failed"]
+                    ready = [doc for doc in documents if doc["status"] == "ready"]
+                    print(f"ready={len(ready)} failed={len(failed)}")
+                    return 0 if not failed else 1
+                time.sleep(0.5)
+            print("reindex 等待超时，请检查 worker 日志", file=sys.stderr)
+            return 1
+    except httpx.HTTPError as exc:
+        print(f"reindex 失败: {exc}", file=sys.stderr)
+        return 1
+
+
 def _demo(base_url: str | None) -> int:
     settings = get_settings()
     base = (base_url or f"http://localhost:{settings.app_port}").rstrip("/") + "/api"
@@ -110,6 +149,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     demo.add_argument(
         "--base-url", default=None, help="API 根地址，默认 http://localhost:<APP_PORT>"
     )
+    reindex = sub.add_parser("reindex", help="重建知识库三路索引")
+    reindex.add_argument("--kb", required=True, help="知识库 id")
+    reindex.add_argument("--base-url", default=None, help="API 根地址")
 
     args = parser.parse_args(argv)
     if args.command in (None, "serve"):
@@ -121,6 +163,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _migrate()
     if args.command == "demo":
         return _demo(args.base_url)
+    if args.command == "reindex":
+        return _reindex(args.kb, args.base_url)
     parser.error(f"未知命令: {args.command}")
     return 2
 
