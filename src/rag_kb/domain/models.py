@@ -200,3 +200,136 @@ class Citation:
     def __post_init__(self) -> None:
         if self.index < 1:
             raise ValueError("引用编号从 1 开始")
+
+
+class BlockType(StrEnum):
+    TEXT = "text"
+    HEADING = "heading"
+    IMAGE = "image"
+    TABLE = "table"
+
+
+class IngestJobStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True, slots=True)
+class ChatMessage:
+    role: str
+    content: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImageRef:
+    """解析器抽出的图片；``data`` 在领域层保持 bytes，落盘由 Storage 端口负责。"""
+
+    id: str
+    data: bytes
+    mime: str = "image/png"
+
+
+@dataclass(frozen=True, slots=True)
+class Block:
+    """解析器的统一输出单元。
+
+    两种格式的能力不同：PDF 有 ``page_no/bbox``，docx 为 ``None``；两者都必须提供
+    ``seq`` 与 ``char_start/char_end``，否则图片与文本无法回到原文位置。
+    """
+
+    type: BlockType
+    text: str
+    seq: int
+    char_start: int
+    char_end: int
+    page_no: int | None = None
+    bbox: BBox | None = None
+    heading_level: int | None = None
+    image_ref: ImageRef | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedDocument:
+    blocks: tuple[Block, ...]
+    page_count: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class VectorRecord:
+    chunk_id: str
+    doc_id: UUID
+    level: ChunkLevel
+    vector: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class VectorHit:
+    chunk_id: str
+    score: float
+    rank: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LexicalHit:
+    chunk_id: str
+    score: float
+    rank: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Entity:
+    """Neo4j 中的实体；``normalized`` 参与唯一约束与种子链接。"""
+
+    id: str
+    kb_id: UUID
+    name: str
+    normalized: str
+    type: str
+    aliases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class Relation:
+    """实体关系边。``chunk_id`` 必须指向可检索的子块，否则无法回溯原文。"""
+
+    head_id: str
+    tail_id: str
+    type: str
+    chunk_id: str
+    weight: float = 1.0
+    evidence_span: tuple[int, int] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GraphEvidence:
+    chunk_id: str
+    score: float
+    hops: int
+    seed_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class IngestJob:
+    id: UUID
+    doc_id: UUID
+    stage: str
+    status: IngestJobStatus = IngestJobStatus.PENDING
+    attempts: int = 0
+    error: str | None = None
+    timings: dict[str, object] = field(default_factory=dict)
+    claimed_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class QueryLog:
+    kb_id: UUID
+    mode: SearchMode
+    query: str
+    latency_ms: float
+    hit_ids: tuple[str, ...] = ()
+    channels: dict[str, int] = field(default_factory=dict)
+    rerank: bool = False
+    tokens: int | None = None
+    created_at: datetime | None = None
