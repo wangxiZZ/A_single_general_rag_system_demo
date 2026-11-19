@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}分块 · {{ document.filename }}{% endblock %}
+{% block content %}
+<p><a href="/web/kbs/{{ kb_id }}">← 返回文档列表</a></p>
+<div class="hero">
+  <h1>{{ document.filename }}</h1>
+  <p class="muted">
+    状态：{{ status_labels[document.status.value] }} · 分块数：{{ document.chunk_count }}
+    {% if document.page_count %}· 页数：{{ document.page_count }}{% endif %}
+  </p>
+</div>
+
+<section class="card">
+  {% if chunks %}
+  <table class="chunks">
+    <thead>
+      <tr>
+        <th>seq</th>
+        <th>层级</th>
+        <th>类型</th>
+        <th>标题路径</th>
+        <th>页码</th>
+        <th>字符区间</th>
+        <th>tokens</th>
+        <th>内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for chunk in chunks %}
+      <tr>
+        <td>{{ chunk.seq }}</td>
+        <td><span class="badge level-{{ chunk.level.value }}">{{ chunk.level.value }}</span></td>
+        <td>
+          {{ chunk.kind.value }}
+          {% if chunk.meta.get('low_weight') %}<span class="badge status-failed">低权重</span>{% endif %}
+        </td>
+        <td>{{ chunk.heading_path | join(' > ') }}</td>
+        <td>
+          {{ chunk.page_no if chunk.page_no is not none else '-' }}
+          {% if chunk.page_to and chunk.page_to != chunk.page_no %}–{{ chunk.page_to }}{% endif %}
+        </td>
+        <td>{{ chunk.char_start }}–{{ chunk.char_end }}</td>
+        <td>{{ chunk.token_count }}</td>
+        <td class="content"><pre>{{ chunk.content }}</pre></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">还没有分块；确认文档已处理到 chunked。</p>
+  {% endif %}
+</section>
+{% endblock %}

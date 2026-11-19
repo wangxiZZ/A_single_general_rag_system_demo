@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, File, UploadFile, status
 
 from rag_kb.api.deps import DocumentServiceDep
-from rag_kb.api.schemas import DocumentRead
+from rag_kb.api.schemas import ChunkRead, DocumentRead
 from rag_kb.application.upload_validation import validate_upload
 
 router = APIRouter(tags=["documents"])
@@ -53,6 +53,14 @@ async def list_documents(kb_id: UUID, service: DocumentServiceDep) -> list[Docum
 @router.get("/kbs/{kb_id}/documents/{doc_id}", response_model=DocumentRead)
 async def get_document(kb_id: UUID, doc_id: UUID, service: DocumentServiceDep) -> DocumentRead:
     return DocumentRead.model_validate(await service.get_document(kb_id, doc_id))
+
+
+@router.get(
+    "/kbs/{kb_id}/documents/{doc_id}/chunks",
+    response_model=list[ChunkRead],
+)
+async def list_chunks(kb_id: UUID, doc_id: UUID, service: DocumentServiceDep) -> list[ChunkRead]:
+    return [ChunkRead.model_validate(chunk) for chunk in await service.list_chunks(kb_id, doc_id)]
 
 
 @router.delete(

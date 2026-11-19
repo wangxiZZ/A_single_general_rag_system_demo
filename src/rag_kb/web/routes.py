@@ -129,6 +129,25 @@ async def upload_document(
     )
 
 
+@router.get("/kbs/{kb_id}/documents/{doc_id}/chunks", response_class=HTMLResponse)
+async def chunks_page(
+    request: Request,
+    kb_id: UUID,
+    doc_id: UUID,
+    document_service: DocumentDep,
+) -> Response:
+    try:
+        document = await document_service.get_document(kb_id, doc_id)
+        chunks = await document_service.list_chunks(kb_id, doc_id)
+    except NotFoundError:
+        return RedirectResponse(f"/web/kbs/{kb_id}", status_code=303)
+    return _render(
+        request,
+        "chunks.html",
+        {"document": document, "chunks": chunks, "kb_id": kb_id},
+    )
+
+
 @router.get("/kbs/{kb_id}/documents/{doc_id}/status", response_class=HTMLResponse)
 async def document_status(
     request: Request,

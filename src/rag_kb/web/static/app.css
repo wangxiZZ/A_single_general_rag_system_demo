@@ -94,3 +94,20 @@ th { color: var(--muted); font-weight: 600; }
 .status-parsing,
 .status-chunked,
 .status-indexing { background: #eef2ff; color: #3730a3; }
+
+.level-parent { background: #f3f4f6; color: #374151; }
+.level-child { background: #ecfeff; color: #155e75; }
+
+.text-link { color: var(--accent); text-decoration: none; margin-right: 10px; }
+.text-link:hover { text-decoration: underline; }
+
+.chunks td { vertical-align: top; }
+.chunks .content { max-width: 520px; }
+.chunks pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+}

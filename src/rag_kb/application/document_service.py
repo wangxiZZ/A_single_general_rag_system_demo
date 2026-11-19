@@ -18,7 +18,7 @@ from rag_kb.domain.errors import (
     NotFoundError,
     ValidationError,
 )
-from rag_kb.domain.models import Document, DocumentStatus
+from rag_kb.domain.models import Chunk, Document, DocumentStatus
 from rag_kb.domain.ports import MetadataRepository, Storage
 
 
@@ -101,6 +101,10 @@ class DocumentService:
         if await self._repo.get_kb(kb_id) is None:
             raise NotFoundError("knowledge base", kb_id)
         return await self._repo.list_documents(kb_id)
+
+    async def list_chunks(self, kb_id: UUID, doc_id: UUID) -> list[Chunk]:
+        await self.get_document(kb_id, doc_id)
+        return await self._repo.list_chunks(kb_id, doc_id)
 
     async def transition_document(
         self, kb_id: UUID, doc_id: UUID, target: DocumentStatus

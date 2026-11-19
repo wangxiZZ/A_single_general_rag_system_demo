@@ -11,7 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rag_kb.domain.models import DocumentStatus
+from rag_kb.domain.models import ChunkKind, ChunkLevel, DocumentStatus
 
 
 class KBCreate(BaseModel):
@@ -42,3 +42,35 @@ class DocumentRead(BaseModel):
     chunk_count: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class BBoxRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class ChunkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    kb_id: UUID
+    doc_id: UUID
+    parent_id: str | None = None
+    level: ChunkLevel
+    kind: ChunkKind
+    content: str
+    heading_path: tuple[str, ...] = ()
+    page_no: int | None = None
+    page_to: int | None = None
+    bbox: BBoxRead | None = None
+    char_start: int
+    char_end: int
+    seq: int
+    token_count: int
+    image_id: UUID | None = None
+    meta: dict[str, object]
+    chunker_version: str

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from rag_kb.config import Settings
+from rag_kb.domain.models import BBox, Chunk, ChunkKind, ChunkLevel
 from rag_kb.main import create_app
 from tests.unit.fakes import FakeMetadataRepository
 
@@ -85,6 +86,48 @@ async def test_upload_list_get_delete_document(client: AsyncClient) -> None:
     deleted = await client.delete(f"/api/kbs/{kb['id']}/documents/{doc['id']}")
     assert deleted.status_code == 204
     assert (await client.get(f"/api/kbs/{kb['id']}/documents")).json() == []
+
+
+async def test_list_chunks_returns_chunk_fields(
+    client: AsyncClient, repo: FakeMetadataRepository
+) -> None:
+    kb = await _create_kb(client)
+    upload = await client.post(
+        f"/api/kbs/{kb['id']}/documents",
+        files={"file": ("a.pdf", b"%PDF-1.7\nchunks", "application/pdf")},
+    )
+    doc_id = UUID(upload.json()["id"])
+    repo.chunks[doc_id] = [
+        Chunk(
+            id="c" * 32,
+            kb_id=UUID(kb["id"]),
+            doc_id=doc_id,
+            level=ChunkLevel.CHILD,
+            kind=ChunkKind.IMAGE,
+            content="【图片】一张图\n【上下文】前后文",
+            seq=0,
+            char_start=10,
+            char_end=10,
+            token_count=8,
+            chunker_version="v1",
+            heading_path=("Manual", "3.2"),
+            page_no=1,
+            page_to=1,
+            bbox=BBox(1, 2, 101, 202),
+            meta={"low_weight": True},
+        )
+    ]
+
+    response = await client.get(f"/api/kbs/{kb['id']}/documents/{doc_id}/chunks")
+    assert response.status_code == 200
+    chunk = response.json()[0]
+    assert chunk["level"] == "child"
+    assert chunk["kind"] == "image"
+    assert chunk["heading_path"] == ["Manual", "3.2"]
+    assert chunk["bbox"] == {"x0": 1.0, "y0": 2.0, "x1": 101.0, "y1": 202.0}
+    assert chunk["meta"] == {"low_weight": True}
+
+    assert (await client.get(f"/api/kbs/{kb['id']}/documents/{uuid4()}/chunks")).status_code == 404
 
 
 async def test_fake_docx_is_rejected_by_magic(client: AsyncClient) -> None:

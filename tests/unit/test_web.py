@@ -10,7 +10,12 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from rag_kb.config import Settings
-from rag_kb.domain.models import DocumentStatus
+from rag_kb.domain.models import (
+    Chunk,
+    ChunkKind,
+    ChunkLevel,
+    DocumentStatus,
+)
 from rag_kb.main import create_app
 from tests.unit.fakes import FakeMetadataRepository
 
@@ -93,6 +98,41 @@ async def test_upload_document_and_status_partial(
     ready = await client.get(f"/web/kbs/{kb_id}/documents/{doc.id}/status")
     assert 'hx-trigger="every 2s"' not in ready.text
     assert "可检索" in ready.text
+
+
+async def test_chunks_page_shows_structure_and_image_description(
+    client: AsyncClient, repo: FakeMetadataRepository
+) -> None:
+    kb_id = await _create_kb(client)
+    await client.post(
+        f"/web/kbs/{kb_id}/documents",
+        files={"file": ("a.pdf", b"%PDF-1.4\nchunks", "application/pdf")},
+    )
+    doc = next(iter(repo.documents.values()))
+    repo.chunks[doc.id] = [
+        Chunk(
+            id="c" * 32,
+            kb_id=doc.kb_id,
+            doc_id=doc.id,
+            level=ChunkLevel.CHILD,
+            kind=ChunkKind.IMAGE,
+            content="【图片】一张架构图\n【上下文】前后文",
+            seq=3,
+            char_start=10,
+            char_end=10,
+            token_count=12,
+            chunker_version="v1",
+            heading_path=("Manual", "3.2"),
+            page_no=1,
+        )
+    ]
+
+    response = await client.get(f"/web/kbs/{kb_id}/documents/{doc.id}/chunks")
+    assert response.status_code == 200
+    assert "Manual &gt; 3.2" in response.text
+    assert "一张架构图" in response.text
+    assert "child" in response.text
+    assert ">12<" in response.text
 
 
 async def test_duplicate_upload_shows_error(client: AsyncClient) -> None:
