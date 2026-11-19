@@ -145,9 +145,19 @@ class QAService:
             if isinstance(citations_raw, list)
             else []
         )
+        # 回校验：只保留落在 [1..n] 的编号并去重；模型不能"创造"证据编号。
+        valid_citations = sorted({item for item in citations if 1 <= item <= len(evidence)})
+        if not valid_citations:
+            return AnswerResult(
+                answer=NO_EVIDENCE_ANSWER,
+                citations=[],
+                evidence=evidence,
+                no_evidence=True,
+                attempted_channels=attempted_channels,
+            )
         return AnswerResult(
             answer=answer_raw.strip(),
-            citations=citations,
+            citations=valid_citations,
             evidence=evidence,
             no_evidence=False,
             attempted_channels=attempted_channels,

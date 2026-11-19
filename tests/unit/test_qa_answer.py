@@ -147,6 +147,29 @@ async def test_empty_answer_raises() -> None:
         await service.answer(KB_ID, "问题", [_hit(child.id)])
 
 
+async def test_out_of_range_citations_trigger_refusal() -> None:
+    parent, child = _chunks()
+    service = _service(
+        FakeRepo([parent, child]),
+        FakeLLM({"answer": "编造的结论 [9]", "citations": [9, 0, -1]}),
+    )
+    result = await service.answer(KB_ID, "问题", [_hit(child.id)])
+    assert result.no_evidence is True
+    assert result.answer == "知识库中未找到足够依据。"
+    assert result.citations == []
+    assert len(result.evidence) == 1
+
+
+async def test_citations_are_deduplicated_and_in_range() -> None:
+    parent, child = _chunks()
+    service = _service(
+        FakeRepo([parent, child]),
+        FakeLLM({"answer": "结论 [1][1]", "citations": [1, 1, 2]}),
+    )
+    result = await service.answer(KB_ID, "问题", [_hit(child.id)])
+    assert result.citations == [1]
+
+
 async def test_non_integer_citations_are_dropped() -> None:
     parent, child = _chunks()
     service = _service(
