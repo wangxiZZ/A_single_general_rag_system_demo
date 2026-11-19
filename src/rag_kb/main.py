@@ -29,7 +29,7 @@ from rag_kb.application.kb_service import KbService
 from rag_kb.config import Settings, get_settings
 from rag_kb.domain.ports import MetadataRepository
 from rag_kb.infra.health import collect_readiness
-from rag_kb.infra.llm.openai_compat import OpenAICompatVLM
+from rag_kb.infra.llm.openai_compat import OpenAICompatEmbedder, OpenAICompatVLM
 from rag_kb.infra.milvus.store import MilvusVectorStore
 from rag_kb.infra.parsers import build_parser_registry
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
@@ -79,6 +79,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         await vector_store.ensure_collection(settings.embedding_dim)
         app.state.vector_store = vector_store
+
+    embedder: OpenAICompatEmbedder | None = None
+    if settings.embed_api_key:
+        embedder = OpenAICompatEmbedder(
+            base_url=settings.embed_base_url,
+            api_key=settings.embed_api_key,
+            model=settings.embed_model,
+            timeout_s=settings.embed_timeout_s,
+            max_concurrency=settings.embed_max_concurrency,
+            dimension=settings.embedding_dim,
+            batch_size=settings.embed_batch_size,
+        )
+    app.state.embedder = embedder
 
     worker_task: asyncio.Task[None] | None = None
     stop_event = asyncio.Event()
@@ -135,6 +148,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await worker_task
         except Exception:
             logger.exception("ingest worker stopped with error")
+    if embedder is not None:
+        await embedder.aclose()
     if vlm is not None:
         await vlm.aclose()
     if vector_store is not None:

@@ -185,6 +185,24 @@ async def test_embedder_rejects_empty_text() -> None:
     await http.aclose()
 
 
+async def test_embedder_rejects_overlong_text() -> None:
+    http = _http(lambda request: httpx.Response(500))
+    embedder = OpenAICompatEmbedder(
+        base_url=BASE,
+        api_key="key",
+        model="embed",
+        timeout_s=5,
+        max_concurrency=1,
+        backoff_base_s=0,
+        dimension=4,
+        max_chars=5,
+        client=http,
+    )
+    with pytest.raises(EmbeddingError, match="超过 5 字符"):
+        await embedder.embed_documents(["123456"])
+    await http.aclose()
+
+
 async def test_vlm_sends_data_url_and_returns_text() -> None:
     seen: dict[str, Any] = {}
 

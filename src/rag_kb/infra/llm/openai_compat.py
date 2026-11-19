@@ -187,14 +187,27 @@ class OpenAICompatLLM(_OpenAICompatBase):
 
 
 class OpenAICompatEmbedder(_OpenAICompatBase):
-    def __init__(self, *, dimension: int, batch_size: int = 16, **kwargs: Any) -> None:
+    # bge-m3 上限约 8192 tokens；按 1 token≈1.5 汉字折算，8000 字符留出安全余量。
+    DEFAULT_MAX_CHARS = 8000
+
+    def __init__(
+        self,
+        *,
+        dimension: int,
+        batch_size: int = 16,
+        max_chars: int = DEFAULT_MAX_CHARS,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(**kwargs)
         if dimension < 1:
             raise ValueError("dimension 必须 >= 1")
         if batch_size < 1:
             raise ValueError("batch_size 必须 >= 1")
+        if max_chars < 1:
+            raise ValueError("max_chars 必须 >= 1")
         self._dimension = dimension
         self._batch_size = batch_size
+        self._max_chars = max_chars
 
     @property
     def dimension(self) -> int:
@@ -205,6 +218,8 @@ class OpenAICompatEmbedder(_OpenAICompatBase):
             return []
         if any(not text.strip() for text in texts):
             raise EmbeddingError("embedding 输入包含空文本")
+        if any(len(text) > self._max_chars for text in texts):
+            raise EmbeddingError(f"embedding 输入超过 {self._max_chars} 字符，请先分块或截断")
 
         batches = [
             list(texts[index : index + self._batch_size])
