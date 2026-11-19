@@ -26,7 +26,14 @@ async def test_upsert_isolation_delete_and_orphan_cleanup() -> None:
     kb1, kb2 = uuid4(), uuid4()
     doc1, doc2 = uuid4(), uuid4()
     chunk1, chunk2 = "a" * 32, "b" * 32
-    e1 = Entity(id="e1", kb_id=kb1, name="年假政策", normalized="年假政策", type="条款")
+    e1 = Entity(
+        id="e1",
+        kb_id=kb1,
+        name="年假政策",
+        normalized="年假政策",
+        type="条款",
+        aliases=("带薪年假",),
+    )
     e2 = Entity(id="e2", kb_id=kb1, name="员工", normalized="员工", type="人物")
     other = Entity(id="e9", kb_id=kb2, name="年假政策", normalized="年假政策", type="条款")
 
@@ -66,6 +73,10 @@ async def test_upsert_isolation_delete_and_orphan_cleanup() -> None:
 
         candidates = await store.candidate_entities(kb1, ["年假政策"], limit=10)
         assert [entity.id for entity in candidates] == ["e1"]
+        alias_hits = await store.candidate_entities(kb1, ["带薪年假"], limit=10)
+        assert [entity.id for entity in alias_hits] == ["e1"]
+        fuzzy_hits = await store.candidate_entities(kb1, ["年假"], limit=10, contains=True)
+        assert [entity.id for entity in fuzzy_hits] == ["e1"]
 
         # 重复 upsert 幂等
         await store.upsert(

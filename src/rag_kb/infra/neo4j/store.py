@@ -252,20 +252,38 @@ class Neo4jGraphStore:
         return int(record["n"]) if record else 0
 
     @_to_thread
-    def candidate_entities(self, kb_id: UUID, terms: Sequence[str], limit: int) -> list[Entity]:
+    def candidate_entities(
+        self,
+        kb_id: UUID,
+        terms: Sequence[str],
+        limit: int,
+        *,
+        contains: bool = False,
+    ) -> list[Entity]:
         if not terms:
             return []
         with self._session() as session:
             rows = session.run(
                 """
                 MATCH (e:Entity {kb_id: $kb})
-                WHERE e.normalized IN $terms OR e.name IN $terms
+                WHERE (
+                    $contains AND ANY(
+                        term IN $terms
+                        WHERE e.normalized CONTAINS term OR e.name CONTAINS term
+                    )
+                ) OR (
+                    NOT $contains AND (
+                        e.normalized IN $terms OR e.name IN $terms
+                        OR ANY(alias IN coalesce(e.aliases, []) WHERE alias IN $terms)
+                    )
+                )
                 RETURN e
                 LIMIT $limit
                 """,
                 kb=str(kb_id),
                 terms=list(terms),
                 limit=limit,
+                contains=contains,
             ).data()
         return [
             Entity(

@@ -132,7 +132,12 @@ class GraphStore(Protocol):
         mentions: Sequence[Mention],
     ) -> None: ...
     async def candidate_entities(
-        self, kb_id: UUID, terms: Sequence[str], limit: int
+        self,
+        kb_id: UUID,
+        terms: Sequence[str],
+        limit: int,
+        *,
+        contains: bool = False,
     ) -> list[Entity]: ...
     async def expand(
         self, kb_id: UUID, seed_ids: Sequence[str], max_hops: int, neighbor_limit: int
