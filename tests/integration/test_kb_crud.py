@@ -31,7 +31,7 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture
 def app(settings: Settings):
-    return create_app(settings=settings)
+    return create_app(settings=settings, start_worker=False)
 
 
 @pytest.fixture

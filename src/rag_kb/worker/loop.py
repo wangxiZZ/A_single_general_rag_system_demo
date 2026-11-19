@@ -18,25 +18,19 @@ import contextlib
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 
 from rag_kb.domain.errors import IngestAbortedError, NotFoundError
 from rag_kb.domain.models import (
     DocumentStatus,
     IngestJob,
     IngestJobStatus,
+    ProcessResult,
     can_transition,
 )
 from rag_kb.domain.ports import MetadataRepository
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True, slots=True)
-class ProcessResult:
-    stage: str
-    timings: dict[str, object] = field(default_factory=dict)
-
 
 Processor = Callable[[IngestJob], Awaitable[ProcessResult]]
 

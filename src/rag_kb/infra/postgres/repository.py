@@ -74,6 +74,7 @@ def _row_to_document(row: dict[str, Any]) -> Document:
         mime=row["mime"],
         sha256=row["sha256"],
         size=row["size"],
+        file_path=row["file_path"],
         status=DocumentStatus(row["status"]),
         error=row["error"],
         page_count=row["page_count"],
@@ -218,12 +219,12 @@ class PostgresMetadataRepository:
             cur = conn.execute(
                 """
                 INSERT INTO document (
-                    id, kb_id, filename, mime, sha256, size, status, error,
+                    id, kb_id, filename, mime, sha256, size, file_path, status, error,
                     page_count, chunk_count, chunker_version, embed_model,
                     created_at, updated_at
                 )
                 VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     COALESCE(%s, now()), COALESCE(%s, now())
                 )
                 RETURNING *
@@ -235,6 +236,7 @@ class PostgresMetadataRepository:
                     doc.mime,
                     doc.sha256,
                     doc.size,
+                    doc.file_path,
                     doc.status.value,
                     doc.error,
                     doc.page_count,
@@ -272,12 +274,14 @@ class PostgresMetadataRepository:
             cur = conn.execute(
                 """
                 UPDATE document SET
-                    status = %s, error = %s, page_count = %s, chunk_count = %s,
-                    chunker_version = %s, embed_model = %s, updated_at = now()
+                    file_path = %s, status = %s, error = %s, page_count = %s,
+                    chunk_count = %s, chunker_version = %s, embed_model = %s,
+                    updated_at = now()
                 WHERE kb_id = %s AND id = %s
                 RETURNING *
                 """,
                 (
+                    doc.file_path,
                     doc.status.value,
                     doc.error,
                     doc.page_count,

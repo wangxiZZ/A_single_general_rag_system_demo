@@ -11,11 +11,12 @@
 - Web 管理页：建库/删库、上传/查看状态/删除文档；
 - REST：知识库 CRUD、文档上传/列表/详情/删除；
 - 上传校验：扩展名 + magic bytes、大小限制、同库 sha256 去重（409）；
+- 摄取 worker：解析 PDF/docx → 标题树/父子分块 → 图片描述与落盘，状态推进到 `chunked`；
 - 文档状态机：`pending → parsing → chunked → indexing → ready`，失败可重试；
 - 删除级联：DB 行、分块、任务与磁盘文件一起清理；
 - 健康检查：`/healthz`、`/readyz`（Postgres / Milvus / Neo4j + 模型配置）。
 
-> 检索与问答接口尚未实现（M3/M4），当前上传后的文档会停留在 `pending`，等 M2 的 worker 接入。
+> 检索与问答接口尚未实现（M3/M4）；当前上传后的文档会由 worker 解析并分块到 `chunked`。
 
 ## 快速开始
 

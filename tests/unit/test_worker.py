@@ -15,8 +15,9 @@ from rag_kb.domain.models import (
     DocumentStatus,
     IngestJob,
     IngestJobStatus,
+    ProcessResult,
 )
-from rag_kb.worker.loop import IngestWorker, ProcessResult
+from rag_kb.worker.loop import IngestWorker
 from tests.unit.fakes import FakeMetadataRepository
 
 

@@ -107,6 +107,7 @@ class Document:
     mime: str
     sha256: str
     size: int
+    file_path: str = ""
     status: DocumentStatus = DocumentStatus.PENDING
     error: str | None = None
     page_count: int | None = None
@@ -335,6 +336,14 @@ class IngestJob:
     error: str | None = None
     timings: dict[str, object] = field(default_factory=dict)
     claimed_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessResult:
+    """摄取 processor 的返回：最终阶段 + 各阶段耗时。"""
+
+    stage: str
+    timings: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

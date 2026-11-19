@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     vlm_enabled: bool = True
 
     # ---- 分块参数（题目要求方案可解释，故全部可配）----
+    # 分块规则版本：参数或算法变更时递增，reindex 依据它判断是否需要重建。
+    chunker_version: str = "v1"
     chunk_target_tokens: int = 320
     chunk_overlap_ratio: float = 0.15
     parent_max_tokens: int = 1200

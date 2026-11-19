@@ -23,7 +23,7 @@ def repo() -> FakeMetadataRepository:
 @pytest.fixture
 def app(tmp_path: Path, repo: FakeMetadataRepository):
     settings = Settings(_env_file=None, data_dir=tmp_path, max_upload_mb=1)
-    return create_app(settings=settings, repository=repo)
+    return create_app(settings=settings, repository=repo, start_worker=False)
 
 
 @pytest.fixture

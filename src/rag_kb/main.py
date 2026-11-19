@@ -9,6 +9,8 @@ Web 页面，装配顺序与 ``docs/实施计划.md`` 的里程碑一一对应�
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -22,13 +24,17 @@ from rag_kb import __version__
 from rag_kb.api.errors import register_exception_handlers
 from rag_kb.api.routers import documents, health, kbs
 from rag_kb.application.document_service import DocumentService
+from rag_kb.application.ingest_pipeline import IngestPipeline
 from rag_kb.application.kb_service import KbService
 from rag_kb.config import Settings, get_settings
 from rag_kb.domain.ports import MetadataRepository
 from rag_kb.infra.health import collect_readiness
+from rag_kb.infra.llm.openai_compat import OpenAICompatVLM
+from rag_kb.infra.parsers import build_parser_registry
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
 from rag_kb.infra.storage.local import LocalStorage
 from rag_kb.web import routes as web_routes
+from rag_kb.worker.loop import IngestWorker
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +69,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         max_upload_mb=settings.max_upload_mb,
     )
 
+    worker_task: asyncio.Task[None] | None = None
+    stop_event = asyncio.Event()
+    vlm: OpenAICompatVLM | None = None
+
+    if app.state.start_worker:
+        if settings.vlm_enabled and settings.vlm_api_key:
+            vlm = OpenAICompatVLM(
+                base_url=settings.vlm_base_url,
+                api_key=settings.vlm_api_key,
+                model=settings.vlm_model,
+                timeout_s=settings.vlm_timeout_s,
+                max_concurrency=settings.vlm_max_concurrency,
+            )
+        pipeline = IngestPipeline(
+            repository,
+            storage,
+            build_parser_registry(),
+            vlm,
+            chunker_version=settings.chunker_version,
+            target_tokens=settings.chunk_target_tokens,
+            overlap_ratio=settings.chunk_overlap_ratio,
+            parent_max_tokens=settings.parent_max_tokens,
+            chars_per_token=settings.chars_per_token,
+            embed_model=settings.embed_model,
+        )
+        worker = IngestWorker(repository, pipeline.process, poll_interval_s=1.0)
+        worker_task = asyncio.create_task(worker.run(stop_event), name="ingest-worker")
+        app.state.worker_task = worker_task
+
     configured = settings.model_api_configured
     logger.info(
         "rag-kb %s 启动 env=%s data_dir=%s 模型配置 llm=%s embedding=%s vlm=%s",
@@ -76,10 +111,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not all(configured.values()):
         logger.warning("存在未配置的模型能力，相关功能将不可用；请检查 .env")
 
-    # TODO(M2/M3): 建立 Milvus 客户端与 Neo4j driver，做向量维度 fail-fast 校验，
-    # 并把 ingest worker 作为后台任务拉起。
+    # TODO(M3): 建立 Milvus 客户端与 Neo4j driver，做向量维度 fail-fast 校验。
     yield
 
+    if worker_task is not None:
+        stop_event.set()
+        try:
+            await asyncio.wait_for(worker_task, timeout=10)
+        except TimeoutError:
+            worker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker_task
+        except Exception:
+            logger.exception("ingest worker stopped with error")
+    if vlm is not None:
+        await vlm.aclose()
     if created_repository is not None:
         await created_repository.close()
 
@@ -87,8 +133,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app(
     settings: Settings | None = None,
     repository: MetadataRepository | None = None,
+    *,
+    start_worker: bool = True,
 ) -> FastAPI:
-    """工厂函数：测试可注入自定义 Settings 与 fake 仓储，无需改写环境变量。"""
+    """工厂函数：测试可注入自定义 Settings / fake 仓储，并关闭后台 worker。"""
     resolved = settings or get_settings()
 
     app = FastAPI(
@@ -102,6 +150,7 @@ def create_app(
     )
     app.state.settings = resolved
     app.state.repository = repository
+    app.state.start_worker = start_worker
     app.state.readiness_probe = lambda: collect_readiness(resolved)
 
     app.mount("/static", StaticFiles(directory=WEB_STATIC_DIR), name="static")

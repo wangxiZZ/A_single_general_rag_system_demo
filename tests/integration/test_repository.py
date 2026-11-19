@@ -144,7 +144,7 @@ async def test_repository_roundtrip_and_isolation() -> None:
 
 
 async def test_app_lifespan_opens_and_closes_repository() -> None:
-    app = create_app()
+    app = create_app(start_worker=False)
     async with app.router.lifespan_context(app):
         assert isinstance(app.state.repository, PostgresMetadataRepository)
         assert await app.state.repository.get_kb(uuid4()) is None

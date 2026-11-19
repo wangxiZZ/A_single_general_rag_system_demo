@@ -65,6 +65,7 @@ class DocumentService:
             mime=mime,
             sha256=sha256,
             size=len(data),
+            file_path=relative_path,
             status=DocumentStatus.PENDING,
         )
 
