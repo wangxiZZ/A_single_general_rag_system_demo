@@ -218,3 +218,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# workbuddy
+.workbuddy/
+
+# Uploaded files and local volumes (runtime data, never committed)
+# 用 data/* 而非 data/：直接忽略目录时，目录内的例外规则（!.gitkeep）不生效
+data/*
+!data/.gitkeep
