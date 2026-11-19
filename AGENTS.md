@@ -110,8 +110,8 @@ docker compose down -v            # 停止并清空数据（重建索引时用�
 
 # 运维命令统一走 rag-kb CLI（Makefile 只是薄封装）
 docker compose exec app rag-kb migrate            # 执行迁移
-docker compose exec app rag-kb demo               # 装载演示数据
-docker compose exec app rag-kb reindex --kb <id>  # 重建三路索引
+uv run rag-kb demo                                # 装载演示数据（需宿主侧 tests/fixtures）
+# rag-kb reindex 由 M3-13 提供
 ```
 
 本机不经容器直跑（需要三个存储已在 localhost 暴露）：

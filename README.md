@@ -36,10 +36,13 @@ docker compose up -d --build
 docker compose ps          # 等全部 healthy（Milvus 首次约 60-90s）
 
 # 3. 初始化数据库（首次或迁移后）
-uv run python scripts/migrate.py
+uv run rag-kb migrate
 
 # 4. 检查就绪
 curl -s localhost:8000/readyz | python -m json.tool
+
+# 5.（可选）装载演示知识库与固定夹具
+uv run rag-kb demo
 ```
 
 打开：
@@ -109,10 +112,11 @@ uv run ruff check src tests mcp_server scripts
 uv run ruff format --check src tests
 ```
 
-数据库迁移：
+数据库迁移与演示：
 
 ```bash
-uv run python scripts/migrate.py          # 宿主直跑，使用 .env 的 PG_DSN
+uv run rag-kb migrate                     # 宿主直跑，使用 .env 的 PG_DSN
+uv run rag-kb demo                        # 通过 REST 建演示库并上传固定夹具
 ```
 
 ## 目录导览

@@ -37,10 +37,10 @@ build: ## 仅重建应用镜像
 	$(COMPOSE) build app
 
 migrate: ## 在容器内执行数据库迁移
-	$(COMPOSE) exec app rag-kb-migrate
+	$(COMPOSE) exec app rag-kb migrate
 
-demo: ## 装载演示数据（建库 + 上传示例文档）
-	$(COMPOSE) exec app python scripts/load_demo.py
+demo: ## 装载演示数据（宿主机执行，读取 tests/fixtures）
+	uv run rag-kb demo
 
 test: ## 跑全部测试（需服务已启动）
 	uv run pytest -q
