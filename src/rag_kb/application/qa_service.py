@@ -6,13 +6,23 @@ M4-01 先实现证据侧：命中子块 → 回填父块 → 受 ``QA_MAX_CONTEX
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from rag_kb.application.chunking import estimate_tokens
-from rag_kb.domain.errors import ConfigurationError
-from rag_kb.domain.models import Chunk, SearchHit
-from rag_kb.domain.ports import MetadataRepository
+from rag_kb.domain.errors import ConfigurationError, LlmError
+from rag_kb.domain.models import ChatMessage, Chunk, SearchHit
+from rag_kb.domain.ports import LLM, MetadataRepository
+
+NO_EVIDENCE_ANSWER = "知识库中未找到足够依据。"
+ANSWER_SCHEMA: dict[str, object] = {
+    "type": "object",
+    "properties": {
+        "answer": {"type": "string"},
+        "citations": {"type": "array", "items": {"type": "integer"}},
+    },
+    "required": ["answer", "citations"],
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,11 +34,21 @@ class Evidence:
     token_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class AnswerResult:
+    answer: str
+    citations: list[int]
+    evidence: list[Evidence]
+    no_evidence: bool = False
+    attempted_channels: list[str] = field(default_factory=list)
+
+
 class QAService:
     def __init__(
         self,
         repository: MetadataRepository,
         *,
+        llm: LLM | None = None,
         max_context_tokens: int,
         parent_max_tokens: int,
         chars_per_token: float,
@@ -39,6 +59,7 @@ class QAService:
                 f"PARENT_MAX_TOKENS={parent_max_tokens}，单条父块会天然超预算"
             )
         self._repo = repository
+        self._llm = llm
         self._max_context_tokens = max_context_tokens
         self._chars_per_token = chars_per_token
 
@@ -96,3 +117,60 @@ class QAService:
             )
             for index, item in enumerate(candidates, start=1)
         ]
+
+    async def answer(self, kb_id: UUID, question: str, hits: list[SearchHit]) -> AnswerResult:
+        attempted_channels = sorted({channel for hit in hits for channel in hit.channels})
+        evidence = await self.assemble_evidence(kb_id, hits)
+        if not evidence:
+            return AnswerResult(
+                answer=NO_EVIDENCE_ANSWER,
+                citations=[],
+                evidence=[],
+                no_evidence=True,
+                attempted_channels=attempted_channels,
+            )
+        if self._llm is None:
+            raise ConfigurationError("LLM_API_KEY 未配置，无法生成回答")
+
+        data = await self._llm.structured_json(
+            [ChatMessage(role="user", content=self._prompt(question, evidence))],
+            ANSWER_SCHEMA,
+        )
+        answer_raw = data.get("answer")
+        citations_raw = data.get("citations")
+        if not isinstance(answer_raw, str) or not answer_raw.strip():
+            raise LlmError("模型返回空回答")
+        citations = (
+            [item for item in citations_raw if isinstance(item, int)]
+            if isinstance(citations_raw, list)
+            else []
+        )
+        return AnswerResult(
+            answer=answer_raw.strip(),
+            citations=citations,
+            evidence=evidence,
+            no_evidence=False,
+            attempted_channels=attempted_channels,
+        )
+
+    @staticmethod
+    def _prompt(question: str, evidence: list[Evidence]) -> str:
+        lines = [
+            "只根据下面的证据回答问题；每个结论后必须标注来源编号 [n]。",
+            "证据不足时直接回答“知识库中未找到足够依据”，不要编造。",
+            "",
+            f"问题：{question}",
+            "",
+            "证据：",
+        ]
+        for item in evidence:
+            location = (
+                f"第 {item.body.page_no} 页"
+                if item.body.page_no is not None
+                else f"段落 #{item.body.seq}"
+            )
+            heading = " > ".join(item.body.heading_path)
+            lines.append(f"[{item.index}] 《{item.hit.doc_name}》{location} · {heading}")
+            lines.append(item.text)
+            lines.append("")
+        return "\n".join(lines)
