@@ -63,21 +63,25 @@ class Settings(BaseSettings):
     # ---- LLM：生成与图谱抽取 ----
     llm_base_url: str = "https://api.deepseek.com/v1"
     llm_api_key: str = ""
-    llm_model: str = "deepseek-chat"
+    # 网关 /models 实际列出的是 deepseek-flash；deepseek-chat 作为别名也能用，
+    # 但显式写实际模型 ID 更利于复现与排查。
+    llm_model: str = "deepseek-flash"
     llm_timeout_s: int = 90
     llm_max_concurrency: int = 4
 
     # ---- Embedding ----
-    embed_base_url: str = "https://api.siliconflow.cn/v1"
+    embed_base_url: str = "https://maas.qianwenaiapi.com/compatible-mode/v1"
     embed_api_key: str = ""
-    embed_model: str = "BAAI/bge-m3"
+    # 实测输出 1024 维，与 embedding_dim 的默认值一致；换模型必须同时改维度并重建 collection。
+    embed_model: str = "qwen3.7-text-embedding-flash"
     embed_batch_size: int = 16
     embed_timeout_s: int = 60
 
     # ---- 多模态（图片描述）----
-    vlm_base_url: str = ""
+    vlm_base_url: str = "https://maas.qianwenaiapi.com/compatible-mode/v1"
     vlm_api_key: str = ""
-    vlm_model: str = "qwen-vl-max"
+    # 该网关不提供 qwen-vl-max；qwen3-vl-plus 是实测可用的生成式多模态模型。
+    vlm_model: str = "qwen3-vl-plus"
     vlm_timeout_s: int = 90
     # 关闭时图片仍会入索引，content 退化为"[图片] 无法描述"占位，便于断网调试。
     vlm_enabled: bool = True
@@ -93,7 +97,13 @@ class Settings(BaseSettings):
     # ---- 检索参数 ----
     retrieval_top_k: int = 20
     fusion_rrf_k: int = 60
+    # 重排默认关闭；端点/模型先占位，M3 实现 cross-encoder 时再填。空值不等于故障，
+    # 只有 rerank_enabled=true 且缺少端点时才在启动期报配置错误。
     rerank_enabled: bool = False
+    rerank_base_url: str = ""
+    rerank_model: str = ""
+    rerank_api_key: str = ""
+    rerank_timeout_s: int = 60
     graph_max_hops: int = 2
     graph_seed_limit: int = 8
 

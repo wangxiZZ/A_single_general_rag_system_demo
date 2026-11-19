@@ -155,19 +155,19 @@ services:
 
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com/v1}
       LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-flash}
       LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-90}
       LLM_MAX_CONCURRENCY: ${LLM_MAX_CONCURRENCY:-4}
 
-      EMBED_BASE_URL: ${EMBED_BASE_URL:-https://api.siliconflow.cn/v1}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-https://maas.qianwenaiapi.com/compatible-mode/v1}
       EMBED_API_KEY: ${EMBED_API_KEY:-}
-      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
+      EMBED_MODEL: ${EMBED_MODEL:-qwen3.7-text-embedding-flash}
       EMBED_BATCH_SIZE: ${EMBED_BATCH_SIZE:-16}
 
       VLM_ENABLED: ${VLM_ENABLED:-true}
-      VLM_BASE_URL: ${VLM_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      VLM_BASE_URL: ${VLM_BASE_URL:-https://maas.qianwenaiapi.com/compatible-mode/v1}
       VLM_API_KEY: ${VLM_API_KEY:-}
-      VLM_MODEL: ${VLM_MODEL:-qwen-vl-max}
+      VLM_MODEL: ${VLM_MODEL:-qwen3-vl-plus}
 
       CHUNK_TARGET_TOKENS: ${CHUNK_TARGET_TOKENS:-320}
       CHUNK_OVERLAP_RATIO: ${CHUNK_OVERLAP_RATIO:-0.15}
@@ -175,6 +175,10 @@ services:
       RETRIEVAL_TOP_K: ${RETRIEVAL_TOP_K:-20}
       FUSION_RRF_K: ${FUSION_RRF_K:-60}
       RERANK_ENABLED: ${RERANK_ENABLED:-false}
+      RERANK_BASE_URL: ${RERANK_BASE_URL:-}
+      RERANK_MODEL: ${RERANK_MODEL:-}
+      RERANK_API_KEY: ${RERANK_API_KEY:-}
+      RERANK_TIMEOUT_S: ${RERANK_TIMEOUT_S:-60}
       GRAPH_MAX_HOPS: ${GRAPH_MAX_HOPS:-2}
       GRAPH_SEED_LIMIT: ${GRAPH_SEED_LIMIT:-8}
     ports:
