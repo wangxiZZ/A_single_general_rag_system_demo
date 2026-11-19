@@ -32,6 +32,7 @@ from rag_kb.infra.health import collect_readiness
 from rag_kb.infra.llm.openai_compat import OpenAICompatEmbedder, OpenAICompatVLM
 from rag_kb.infra.milvus.store import MilvusVectorStore
 from rag_kb.infra.parsers import build_parser_registry
+from rag_kb.infra.postgres.lexical import PgLexicalIndex
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
 from rag_kb.infra.storage.local import LocalStorage
 from rag_kb.web import routes as web_routes
@@ -79,6 +80,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         await vector_store.ensure_collection(settings.embedding_dim)
         app.state.vector_store = vector_store
+
+    lexical_index: PgLexicalIndex | None = None
+    if created_repository is not None:
+        lexical_index = PgLexicalIndex(
+            settings.pg_dsn,
+            min_size=settings.pg_pool_min,
+            max_size=settings.pg_pool_max,
+        )
+        await lexical_index.open()
+        app.state.lexical_index = lexical_index
 
     embedder: OpenAICompatEmbedder | None = None
     if settings.embed_api_key:
@@ -154,6 +165,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await vlm.aclose()
     if vector_store is not None:
         await vector_store.close()
+    if lexical_index is not None:
+        await lexical_index.close()
     if created_repository is not None:
         await created_repository.close()
 
