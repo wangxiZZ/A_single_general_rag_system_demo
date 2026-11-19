@@ -1,0 +1,577 @@
+{
+  "kb_id": "e2910733-19bf-4d31-96d1-116093edc759",
+  "kb_name": "graph-eval-1795089080",
+  "entities": {
+    "tp": 19,
+    "fp": 7,
+    "fn": 2,
+    "precision": 0.7308,
+    "recall": 0.9048,
+    "f1": 0.8085,
+    "type_accuracy": 0.95,
+    "type_matched": 20
+  },
+  "relations": {
+    "tp": 21,
+    "fp": 6,
+    "fn": 1,
+    "precision": 0.7778,
+    "recall": 0.9545,
+    "f1": 0.8571
+  },
+  "span": {
+    "valid": 27,
+    "total": 27,
+    "rate": 1.0
+  },
+  "missing_relations": [
+    "2026 年 3 月迁移 -[关联]-> 知识库服务"
+  ],
+  "extra_relations": [
+    "蓝海数据 -[关联]-> 星云科技",
+    "星云科技 -[OTHER]-> 新版本",
+    "知识库服务 -[OTHER]-> 旧版检索组件",
+    "知识库服务 -[OTHER]-> 上线审批",
+    "2026 年 3 月 -[关联]-> 迁移",
+    "迁移 -[关联]-> 关联知识库服务"
+  ],
+  "extracted_entities": [
+    {
+      "name": "星云科技",
+      "normalized": "星云科技",
+      "type": "组织"
+    },
+    {
+      "name": "新版本",
+      "normalized": "新版本",
+      "type": "产品"
+    },
+    {
+      "name": "知识库服务",
+      "normalized": "知识库服务",
+      "type": "产品"
+    },
+    {
+      "name": "旧版检索组件",
+      "normalized": "旧版检索组件",
+      "type": "产品"
+    },
+    {
+      "name": "上线审批",
+      "normalized": "上线审批",
+      "type": "流程"
+    },
+    {
+      "name": "蓝海数据",
+      "normalized": "蓝海数据",
+      "type": "组织"
+    },
+    {
+      "name": "检索组件",
+      "normalized": "检索组件",
+      "type": "产品"
+    },
+    {
+      "name": "向量数据库",
+      "normalized": "向量数据库",
+      "type": "产品"
+    },
+    {
+      "name": "华东机房",
+      "normalized": "华东机房",
+      "type": "地点"
+    },
+    {
+      "name": "华东数据中心",
+      "normalized": "华东数据中心",
+      "type": "地点"
+    },
+    {
+      "name": "上海",
+      "normalized": "上海",
+      "type": "地点"
+    },
+    {
+      "name": "张伟",
+      "normalized": "张伟",
+      "type": "人物"
+    },
+    {
+      "name": "上线审批流程",
+      "normalized": "上线审批流程",
+      "type": "流程"
+    },
+    {
+      "name": "数据安全条款",
+      "normalized": "数据安全条款",
+      "type": "条款"
+    },
+    {
+      "name": "数据脱敏要求",
+      "normalized": "数据脱敏要求",
+      "type": "条款"
+    },
+    {
+      "name": "数据网关",
+      "normalized": "数据网关",
+      "type": "产品"
+    },
+    {
+      "name": "数据同步流程",
+      "normalized": "数据同步流程",
+      "type": "流程"
+    },
+    {
+      "name": "单次批量 500 条",
+      "normalized": "单次批量500条",
+      "type": "指标"
+    },
+    {
+      "name": "服务等级协议",
+      "normalized": "服务等级协议",
+      "type": "条款"
+    },
+    {
+      "name": "SLA 99.9%",
+      "normalized": "sla99.9%",
+      "type": "指标"
+    },
+    {
+      "name": "李娜",
+      "normalized": "李娜",
+      "type": "人物"
+    },
+    {
+      "name": "鉴权模块",
+      "normalized": "鉴权模块",
+      "type": "产品"
+    },
+    {
+      "name": "2026 年 3 月",
+      "normalized": "2026年3月",
+      "type": "其他"
+    },
+    {
+      "name": "迁移",
+      "normalized": "迁移",
+      "type": "流程"
+    },
+    {
+      "name": "关联知识库服务",
+      "normalized": "关联知识库服务",
+      "type": "产品"
+    },
+    {
+      "name": "北京",
+      "normalized": "北京",
+      "type": "地点"
+    }
+  ],
+  "extracted_relations": [
+    {
+      "head": "张伟",
+      "head_norm": "张伟",
+      "head_type": "人物",
+      "relation": "属于",
+      "tail": "星云科技",
+      "tail_norm": "星云科技",
+      "tail_type": "组织",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        88,
+        96
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "蓝海数据",
+      "head_norm": "蓝海数据",
+      "head_type": "组织",
+      "relation": "关联",
+      "tail": "星云科技",
+      "tail_norm": "星云科技",
+      "tail_type": "组织",
+      "chunk_id": "92586e60902cb7d68b84aa0ab01205b2",
+      "evidence_span": [
+        58,
+        74
+      ],
+      "doc_id": "7240d881-1d0e-4da3-97dc-560dbb902c2c"
+    },
+    {
+      "head": "星云科技",
+      "head_norm": "星云科技",
+      "head_type": "组织",
+      "relation": "OTHER",
+      "tail": "新版本",
+      "tail_norm": "新版本",
+      "tail_type": "产品",
+      "chunk_id": "92586e60902cb7d68b84aa0ab01205b2",
+      "evidence_span": [
+        13,
+        33
+      ],
+      "doc_id": "7240d881-1d0e-4da3-97dc-560dbb902c2c"
+    },
+    {
+      "head": "星云科技",
+      "head_norm": "星云科技",
+      "head_type": "组织",
+      "relation": "提供",
+      "tail": "知识库服务",
+      "tail_norm": "知识库服务",
+      "tail_type": "产品",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        9,
+        20
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "知识库服务",
+      "head_norm": "知识库服务",
+      "head_type": "产品",
+      "relation": "OTHER",
+      "tail": "旧版检索组件",
+      "tail_norm": "旧版检索组件",
+      "tail_type": "产品",
+      "chunk_id": "92586e60902cb7d68b84aa0ab01205b2",
+      "evidence_span": [
+        33,
+        48
+      ],
+      "doc_id": "7240d881-1d0e-4da3-97dc-560dbb902c2c"
+    },
+    {
+      "head": "知识库服务",
+      "head_norm": "知识库服务",
+      "head_type": "产品",
+      "relation": "OTHER",
+      "tail": "上线审批",
+      "tail_norm": "上线审批",
+      "tail_type": "流程",
+      "chunk_id": "92586e60902cb7d68b84aa0ab01205b2",
+      "evidence_span": [
+        48,
+        58
+      ],
+      "doc_id": "7240d881-1d0e-4da3-97dc-560dbb902c2c"
+    },
+    {
+      "head": "李娜",
+      "head_norm": "李娜",
+      "head_type": "人物",
+      "relation": "属于",
+      "tail": "蓝海数据",
+      "tail_norm": "蓝海数据",
+      "tail_type": "组织",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        91,
+        100
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "知识库服务",
+      "head_norm": "知识库服务",
+      "head_type": "产品",
+      "relation": "包含",
+      "tail": "检索组件",
+      "tail_norm": "检索组件",
+      "tail_type": "产品",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        21,
+        39
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "检索组件",
+      "head_norm": "检索组件",
+      "head_type": "产品",
+      "relation": "依赖",
+      "tail": "向量数据库",
+      "tail_norm": "向量数据库",
+      "tail_type": "产品",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        40,
+        51
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "向量数据库",
+      "head_norm": "向量数据库",
+      "head_type": "产品",
+      "relation": "位于",
+      "tail": "华东机房",
+      "tail_norm": "华东机房",
+      "tail_type": "地点",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        52,
+        63
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "华东机房",
+      "head_norm": "华东机房",
+      "head_type": "地点",
+      "relation": "属于",
+      "tail": "华东数据中心",
+      "tail_norm": "华东数据中心",
+      "tail_type": "地点",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        64,
+        76
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "华东数据中心",
+      "head_norm": "华东数据中心",
+      "head_type": "地点",
+      "relation": "位于",
+      "tail": "上海",
+      "tail_norm": "上海",
+      "tail_type": "地点",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        77,
+        87
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "张伟",
+      "head_norm": "张伟",
+      "head_type": "人物",
+      "relation": "OTHER",
+      "tail": "上线审批流程",
+      "tail_norm": "上线审批流程",
+      "tail_type": "流程",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        97,
+        107
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "上线审批流程",
+      "head_norm": "上线审批流程",
+      "head_type": "流程",
+      "relation": "依赖",
+      "tail": "数据安全条款",
+      "tail_norm": "数据安全条款",
+      "tail_type": "条款",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        108,
+        122
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "鉴权模块",
+      "head_norm": "鉴权模块",
+      "head_type": "产品",
+      "relation": "使用",
+      "tail": "数据安全条款",
+      "tail_norm": "数据安全条款",
+      "tail_type": "条款",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        122,
+        135
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "数据安全条款",
+      "head_norm": "数据安全条款",
+      "head_type": "条款",
+      "relation": "包含",
+      "tail": "数据脱敏要求",
+      "tail_norm": "数据脱敏要求",
+      "tail_type": "条款",
+      "chunk_id": "524d21c212192381e093eb1ede0ee37a",
+      "evidence_span": [
+        123,
+        137
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "蓝海数据",
+      "head_norm": "蓝海数据",
+      "head_type": "组织",
+      "relation": "提供",
+      "tail": "数据网关",
+      "tail_norm": "数据网关",
+      "tail_type": "产品",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        10,
+        21
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "知识库服务",
+      "head_norm": "知识库服务",
+      "head_type": "产品",
+      "relation": "使用",
+      "tail": "数据网关",
+      "tail_norm": "数据网关",
+      "tail_type": "产品",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        135,
+        147
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "数据网关",
+      "head_norm": "数据网关",
+      "head_type": "产品",
+      "relation": "使用",
+      "tail": "数据同步流程",
+      "tail_norm": "数据同步流程",
+      "tail_type": "流程",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        21,
+        34
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "李娜",
+      "head_norm": "李娜",
+      "head_type": "人物",
+      "relation": "OTHER",
+      "tail": "数据同步流程",
+      "tail_norm": "数据同步流程",
+      "tail_type": "流程",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        100,
+        111
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "数据同步流程",
+      "head_norm": "数据同步流程",
+      "head_type": "流程",
+      "relation": "关联",
+      "tail": "单次批量 500 条",
+      "tail_norm": "单次批量500条",
+      "tail_type": "指标",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        34,
+        53
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "单次批量 500 条",
+      "head_norm": "单次批量500条",
+      "head_type": "指标",
+      "relation": "属于",
+      "tail": "服务等级协议",
+      "tail_norm": "服务等级协议",
+      "tail_type": "条款",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        53,
+        72
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "服务等级协议",
+      "head_norm": "服务等级协议",
+      "head_type": "条款",
+      "relation": "包含",
+      "tail": "SLA 99.9%",
+      "tail_norm": "sla99.9%",
+      "tail_type": "指标",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        72,
+        91
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "数据网关",
+      "head_norm": "数据网关",
+      "head_type": "产品",
+      "relation": "包含",
+      "tail": "鉴权模块",
+      "tail_norm": "鉴权模块",
+      "tail_type": "产品",
+      "chunk_id": "6a93b1f4dbc44a088f81d61e476f6489",
+      "evidence_span": [
+        111,
+        122
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "2026 年 3 月",
+      "head_norm": "2026年3月",
+      "head_type": "其他",
+      "relation": "关联",
+      "tail": "迁移",
+      "tail_norm": "迁移",
+      "tail_type": "流程",
+      "chunk_id": "8f2390fa41fadccdb0ffa2953dfc8671",
+      "evidence_span": [
+        0,
+        20
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "迁移",
+      "head_norm": "迁移",
+      "head_type": "流程",
+      "relation": "关联",
+      "tail": "关联知识库服务",
+      "tail_norm": "关联知识库服务",
+      "tail_type": "产品",
+      "chunk_id": "8f2390fa41fadccdb0ffa2953dfc8671",
+      "evidence_span": [
+        10,
+        19
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    },
+    {
+      "head": "蓝海数据",
+      "head_norm": "蓝海数据",
+      "head_type": "组织",
+      "relation": "位于",
+      "tail": "北京",
+      "tail_norm": "北京",
+      "tail_type": "地点",
+      "chunk_id": "8f2390fa41fadccdb0ffa2953dfc8671",
+      "evidence_span": [
+        21,
+        30
+      ],
+      "doc_id": "5a5c36f7-47c7-4215-a136-157d09122abe"
+    }
+  ]
+}

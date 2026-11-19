@@ -205,4 +205,5 @@ docker compose down -v                    # 清空数据卷（重建索引时用
 - [MCP 接入](docs/mcp-setup.md)
 - [演示脚本](docs/demo.md)
 - [检索评测报告](docs/benchmark.md)
+- [图谱抽取评测](docs/graph-eval.md)
 - [待实现方案](docs/design-future.md)
