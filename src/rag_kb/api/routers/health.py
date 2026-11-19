@@ -9,7 +9,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, Response, status
 
 from rag_kb import __version__
-from rag_kb.infra.health import collect_readiness
 
 router = APIRouter(tags=["health"])
 
@@ -26,8 +25,8 @@ def readyz(request: Request, response: Response) -> dict[str, object]:
 
     任一 required 项失败返回 503，便于编排系统据此不把流量打进来。
     """
-    settings = request.app.state.settings
-    checks, ready = collect_readiness(settings)
+    # 探针由 main.py 在装配期注入；API 层不直接依赖 infra，避免路由反向依赖存储实现。
+    checks, ready = request.app.state.readiness_probe()
     if not ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return {"ready": ready, "checks": [item.as_dict() for item in checks]}

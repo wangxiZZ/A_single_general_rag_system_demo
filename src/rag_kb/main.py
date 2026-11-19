@@ -25,6 +25,7 @@ from rag_kb.application.document_service import DocumentService
 from rag_kb.application.kb_service import KbService
 from rag_kb.config import Settings, get_settings
 from rag_kb.domain.ports import MetadataRepository
+from rag_kb.infra.health import collect_readiness
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
 from rag_kb.infra.storage.local import LocalStorage
 from rag_kb.web import routes as web_routes
@@ -101,6 +102,7 @@ def create_app(
     )
     app.state.settings = resolved
     app.state.repository = repository
+    app.state.readiness_probe = lambda: collect_readiness(resolved)
 
     app.mount("/static", StaticFiles(directory=WEB_STATIC_DIR), name="static")
     app.include_router(health.router)
