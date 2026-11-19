@@ -59,6 +59,15 @@ class ConflictError(DomainError):
     code = ErrorCode.CONFLICT
 
 
+class DuplicateDocumentError(ConflictError):
+    """同一知识库内 sha256 重复；API 层映射 409 并回传已有 document_id。"""
+
+    def __init__(self, existing_document_id: object, filename: str = "") -> None:
+        detail = f": {filename}" if filename else ""
+        super().__init__(f"同一知识库已存在相同文件{detail} (document_id={existing_document_id})")
+        self.existing_document_id = existing_document_id
+
+
 class ValidationError(DomainError):
     code = ErrorCode.VALIDATION
 
