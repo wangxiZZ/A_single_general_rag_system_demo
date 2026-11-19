@@ -3,7 +3,7 @@
 > 日期：2026-11-19 · chunker `v1` · 嵌入 `qwen3.7-text-embedding-flash` (1024) ·
 > 生成/图抽取 `deepseek-flash` · 语料：`tests/fixtures/demo/` 两个文档（各 9 个 chunk）。
 > 原始数据：[`rerank-off.json`](../scripts/bench/results/rerank-off.json)、
-> [`rerank-on-hybrid.json`](../scripts/bench/results/rerank-on-hybrid.json)。
+> [`rerank-on.json`](../scripts/bench/results/rerank-on.json)。
 
 ## 1. 方法与口径
 
@@ -23,9 +23,9 @@ uv run python scripts/bench/make_qa.py                 # 重新计算金标区�
 uv run python scripts/bench/run_bench.py --rerank off \
   --out-md scripts/bench/results/rerank-off.md \
   --out-json scripts/bench/results/rerank-off.json
-uv run python scripts/bench/run_bench.py --modes hybrid --rerank on \
-  --out-md scripts/bench/results/rerank-on-hybrid.md \
-  --out-json scripts/bench/results/rerank-on-hybrid.json
+uv run python scripts/bench/run_bench.py --rerank on \
+  --out-md scripts/bench/results/rerank-on.md \
+  --out-json scripts/bench/results/rerank-on.json
 ```
 
 ## 2. 总体结果
@@ -47,16 +47,24 @@ Hybrid 的 MRR/nDCG 最高；keyword 用 10ms 达到接近的效果；graph 单�
 
 | 配置 | Recall@5 | Recall@10 | MRR | nDCG@10 | 平均延迟 ms |
 |---|---|---|---|---|---|
-| hybrid（off） | 1.000 | 1.000 | 0.968 | 0.972 | 376 |
-| hybrid + LLM 重排（on） | 1.000 | 1.000 | **1.000** | **1.000** | **6054** |
+| vector（off） | 1.000 | 1.000 | 0.917 | 0.937 | 373 |
+| vector + rerank | 1.000 | 1.000 | **1.000** | **1.000** | 6019 |
+| keyword（off） | 1.000 | 1.000 | 0.929 | 0.944 | **10** |
+| keyword + rerank | 1.000 | 1.000 | **1.000** | **1.000** | 2350 |
+| graph（off） | 0.857 | 0.857 | 0.833 | 0.803 | 17 |
+| graph + rerank | 0.857 | 0.857 | 0.833 | 0.803 | 1392 |
+| **hybrid（off）** | 1.000 | 1.000 | 0.968 | 0.972 | 376 |
+| hybrid + rerank | 1.000 | 1.000 | **1.000** | **1.000** | 5954 |
+| hybrid_weighted（off） | 1.000 | 1.000 | 0.952 | 0.965 | 358 |
+| hybrid_weighted + rerank | 1.000 | 1.000 | **1.000** | **1.000** | 5418 |
 
-- 收益：把 3 条“第二名才对”的查询全部提到第一（MRR 0.968 → 1.000）；
-- 代价：平均延迟 **约 16 倍**（0.38s → 6.05s），每次查询多一次 LLM 调用；
-- 结论：重排应保持**显式 opt-in**，不作为默认检索路径；对“必须给第一条就对”的场景
-  （如直接展示 top-1 的证据卡片）才值得打开。
-
-> 本次重排只跑了 `hybrid`（默认模式）；`run_bench.py` 支持 `--rerank both` 跑全模式，
-> 代价是 5 倍 LLM 调用量，未纳入本次报告。
+- 收益：vector/keyword/hybrid/weighted 的排序全部提到“第一条即命中”（MRR/nDCG = 1.0）；
+- 代价：每种模式都增加 1.4–6.0 秒，hybrid 约 **16 倍**；keyword 从 10ms 升到 2.35s，
+  说明重排成本与召回通道无关，主要是 LLM 调用；
+- **graph 的重排没有收益**：召回缺失的题（表格/图片）候选里根本没有正确答案，
+  重排只能调整已有候选顺序，不能补召回；
+- 结论：重排应保持**显式 opt-in**，默认关闭；只有“必须 top-1 正确”且能接受秒级延迟时
+  才打开。若召回本身缺失，应先修召回，而不是加重排。
 
 ## 3. 分题型分析（Top-1 准确率）
 
@@ -101,7 +109,9 @@ Hybrid 的 MRR/nDCG 最高；keyword 用 10ms 达到接近的效果；graph 单�
 | graph | 17ms | 实体链接 + BFS（语料小） |
 | vector | 373ms | 主要耗时是 embedding API |
 | hybrid | 376ms | 向量为主，融合开销可忽略 |
-| hybrid + rerank | 6054ms | 多一次 LLM listwise（30 候选） |
+| hybrid + rerank | 5954ms | 多一次 LLM listwise（30 候选） |
+| vector + rerank | 6019ms | 同上；重排成本与召回通道无关 |
+| keyword + rerank | 2350ms | 候选少，prompt 更短 |
 
 延迟随语料与网络变化；这里的绝对值只用于横向比较。
 
@@ -110,5 +120,5 @@ Hybrid 的 MRR/nDCG 最高；keyword 用 10ms 达到接近的效果；graph 单�
 1. 语料只有 2 个文档、25 条问题，指标波动大，结论应视为方向性而非统计显著；
 2. 夹具是合成文档，图片为占位噪点图，图片类问题仅验证链路；
 3. 金标区间来自当前解析器输出，换解析器需要重新运行 `make_qa.py`；
-4. 重排只测了 hybrid；其他模式的 on/off 未采样；
-5. 未评测回答质量（忠实度、引用正确率），本次只评测检索层。
+4. 未评测回答质量（忠实度、引用正确率），本次只评测检索层；
+5. 重排由 LLM listwise 完成，结果受模型输出波动影响，只跑了一轮、未做方差估计。
