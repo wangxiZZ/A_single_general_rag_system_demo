@@ -11,7 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rag_kb.domain.models import ChunkKind, ChunkLevel, DocumentStatus
+from rag_kb.domain.models import ChunkKind, ChunkLevel, DocumentStatus, SearchMode
 
 
 class KBCreate(BaseModel):
@@ -42,6 +42,29 @@ class DocumentRead(BaseModel):
     chunk_count: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class SearchHitRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    chunk_id: str
+    doc_id: UUID
+    doc_name: str
+    level: ChunkLevel
+    score: float
+    channels: tuple[str, ...]
+    snippet: str = ""
+    heading_path: tuple[str, ...] = ()
+    page_no: int | None = None
+    image_url: str | None = None
+    debug: dict[str, object] = Field(default_factory=dict)
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=1000)
+    mode: SearchMode = SearchMode.HYBRID
+    top_k: int = Field(default=20, ge=1, le=50)
+    rerank: bool = False
 
 
 class BBoxRead(BaseModel):

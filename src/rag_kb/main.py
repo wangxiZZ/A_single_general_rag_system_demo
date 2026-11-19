@@ -22,14 +22,20 @@ from fastapi.staticfiles import StaticFiles
 
 from rag_kb import __version__
 from rag_kb.api.errors import register_exception_handlers
-from rag_kb.api.routers import documents, health, kbs
+from rag_kb.api.routers import documents, health, kbs, search
 from rag_kb.application.document_service import DocumentService
 from rag_kb.application.ingest_pipeline import IngestPipeline
 from rag_kb.application.kb_service import KbService
+from rag_kb.application.search_service import SearchService
 from rag_kb.config import Settings, get_settings
 from rag_kb.domain.ports import MetadataRepository
 from rag_kb.infra.health import collect_readiness
-from rag_kb.infra.llm.openai_compat import OpenAICompatEmbedder, OpenAICompatVLM
+from rag_kb.infra.llm.openai_compat import (
+    OpenAICompatEmbedder,
+    OpenAICompatLLM,
+    OpenAICompatVLM,
+)
+from rag_kb.infra.llm.rerank import LLMListwiseReranker
 from rag_kb.infra.milvus.store import MilvusVectorStore
 from rag_kb.infra.neo4j.store import Neo4jGraphStore
 from rag_kb.infra.parsers import build_parser_registry
@@ -116,6 +122,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
     app.state.embedder = embedder
 
+    llm: OpenAICompatLLM | None = None
+    if settings.llm_api_key:
+        llm = OpenAICompatLLM(
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            timeout_s=settings.llm_timeout_s,
+            max_concurrency=settings.llm_max_concurrency,
+        )
+    if app.state.search_service is None:
+        app.state.search_service = SearchService(
+            repository,
+            embedder=embedder,
+            vector_store=vector_store,
+            lexical_index=lexical_index,
+            graph_store=graph_store,
+            reranker=LLMListwiseReranker(llm) if llm is not None else None,
+            top_k=settings.retrieval_top_k,
+            rrf_k=settings.fusion_rrf_k,
+            graph_seed_limit=settings.graph_seed_limit,
+            graph_max_hops=settings.graph_max_hops,
+            graph_neighbor_limit=settings.graph_neighbor_limit,
+            hybrid_weights={
+                "vector": settings.hybrid_weight_vector,
+                "keyword": settings.hybrid_weight_keyword,
+                "graph": settings.hybrid_weight_graph,
+            },
+        )
+
     worker_task: asyncio.Task[None] | None = None
     stop_event = asyncio.Event()
     vlm: OpenAICompatVLM | None = None
@@ -173,6 +208,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.exception("ingest worker stopped with error")
     if embedder is not None:
         await embedder.aclose()
+    if llm is not None:
+        await llm.aclose()
     if vlm is not None:
         await vlm.aclose()
     if vector_store is not None:
@@ -190,6 +227,7 @@ def create_app(
     repository: MetadataRepository | None = None,
     *,
     start_worker: bool = True,
+    search_service: SearchService | None = None,
 ) -> FastAPI:
     """工厂函数：测试可注入自定义 Settings / fake 仓储，并关闭后台 worker。"""
     resolved = settings or get_settings()
@@ -205,6 +243,7 @@ def create_app(
     )
     app.state.settings = resolved
     app.state.repository = repository
+    app.state.search_service = search_service
     app.state.start_worker = start_worker
     app.state.readiness_probe = lambda: collect_readiness(resolved)
 
@@ -212,6 +251,7 @@ def create_app(
     app.include_router(health.router)
     app.include_router(kbs.router, prefix="/api")
     app.include_router(documents.router, prefix="/api")
+    app.include_router(search.router, prefix="/api")
     app.include_router(web_routes.router)
     register_exception_handlers(app)
 

@@ -9,6 +9,7 @@ import pytest
 from rag_kb.application.search_service import SearchService
 from rag_kb.domain.errors import ConfigurationError
 from rag_kb.domain.models import (
+    KB,
     Chunk,
     ChunkKind,
     ChunkLevel,
@@ -57,6 +58,9 @@ class FakeRepository:
                 _chunk("c" * 32, "C 内容", 2),
             ]
         }
+
+    async def get_kb(self, kb_id: UUID) -> KB | None:
+        return KB(id=kb_id, name="kb")
 
     async def get_chunks(self, kb_id: UUID, chunk_ids) -> list[Chunk]:
         return [self.chunks[cid] for cid in chunk_ids if cid in self.chunks]

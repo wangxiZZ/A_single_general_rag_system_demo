@@ -13,7 +13,12 @@ from uuid import UUID
 
 from rag_kb.application.fusion import reciprocal_rank_fusion, weighted_fusion
 from rag_kb.application.graph_search import graph_search
-from rag_kb.domain.errors import ConfigurationError, DependencyUnavailableError, DomainError
+from rag_kb.domain.errors import (
+    ConfigurationError,
+    DependencyUnavailableError,
+    DomainError,
+    NotFoundError,
+)
 from rag_kb.domain.models import SearchHit, SearchMode
 from rag_kb.domain.ports import (
     Embedder,
@@ -68,6 +73,8 @@ class SearchService:
         top_k: int | None = None,
         rerank: bool = False,
     ) -> list[SearchHit]:
+        if await self._repo.get_kb(kb_id) is None:
+            raise NotFoundError("knowledge base", kb_id)
         resolved_mode = SearchMode(mode)
         limit = top_k or self._top_k
 

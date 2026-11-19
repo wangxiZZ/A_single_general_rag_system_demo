@@ -11,6 +11,7 @@ from fastapi import Depends, Request
 
 from rag_kb.application.document_service import DocumentService
 from rag_kb.application.kb_service import KbService
+from rag_kb.application.search_service import SearchService
 
 
 def get_kb_service(request: Request) -> KbService:
@@ -21,5 +22,10 @@ def get_document_service(request: Request) -> DocumentService:
     return request.app.state.document_service
 
 
+def get_search_service(request: Request) -> SearchService:
+    return request.app.state.search_service
+
+
 KbServiceDep = Annotated[KbService, Depends(get_kb_service)]
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
+SearchServiceDep = Annotated[SearchService, Depends(get_search_service)]
