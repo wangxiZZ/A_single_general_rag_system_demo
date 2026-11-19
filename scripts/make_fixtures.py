@@ -118,7 +118,8 @@ def make_demo_pdf(path: Path) -> None:
         "财务在收到完整材料后 5 个工作日内完成审核，审核通过后 3 个工作日内打款。",
         "发票抬头必须为公司全称，个人抬头的发票不予报销。",
         "3. 联系我们",
-        "人事问题请联系 hr@example.com；报销问题请联系 finance@example.com。",
+        "人事问题请联系 hr@example.com；",
+        "报销问题请联系 finance@example.com。",
     ]
     y = 130
     for line in lines2:
