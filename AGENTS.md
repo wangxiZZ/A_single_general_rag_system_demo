@@ -187,3 +187,6 @@ uv run ruff format --check src tests
   `insert → search → delete` 冒烟；不兼容时优先升服务端到 2.6.x（TD-08）。
 - Windows 上 `Path("/data")` 会解析到当前盘符根目录，本机直跑用相对路径 `./data`，容器内
   由 compose 覆盖为 `/data`。
+- 本机若已有 PostgreSQL 服务占用 5432，Docker 的端口映射会"显示成功但 localhost 实际连到
+  本地实例"（表现为 role `rag` 不存在）。在 `.env` 设 `PG_PORT=5433` 并同步 `PG_DSN`，
+  然后 `docker compose up -d postgres` 重建端口映射；容器内部仍用 `postgres:5432`。
