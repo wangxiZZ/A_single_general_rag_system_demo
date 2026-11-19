@@ -31,6 +31,7 @@ from rag_kb.domain.ports import MetadataRepository
 from rag_kb.infra.health import collect_readiness
 from rag_kb.infra.llm.openai_compat import OpenAICompatEmbedder, OpenAICompatVLM
 from rag_kb.infra.milvus.store import MilvusVectorStore
+from rag_kb.infra.neo4j.store import Neo4jGraphStore
 from rag_kb.infra.parsers import build_parser_registry
 from rag_kb.infra.postgres.lexical import PgLexicalIndex
 from rag_kb.infra.postgres.repository import PostgresMetadataRepository
@@ -90,6 +91,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         await lexical_index.open()
         app.state.lexical_index = lexical_index
+
+    graph_store: Neo4jGraphStore | None = None
+    if created_repository is not None:
+        graph_store = Neo4jGraphStore(
+            settings.neo4j_uri,
+            user=settings.neo4j_user,
+            password=settings.neo4j_password,
+            database=settings.neo4j_database,
+        )
+        await graph_store.ensure_schema()
+        app.state.graph_store = graph_store
 
     embedder: OpenAICompatEmbedder | None = None
     if settings.embed_api_key:
@@ -167,6 +179,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await vector_store.close()
     if lexical_index is not None:
         await lexical_index.close()
+    if graph_store is not None:
+        await graph_store.close()
     if created_repository is not None:
         await created_repository.close()
 
