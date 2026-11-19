@@ -327,6 +327,7 @@ class GraphEvidence:
 @dataclass(frozen=True, slots=True)
 class IngestJob:
     id: UUID
+    kb_id: UUID
     doc_id: UUID
     stage: str
     status: IngestJobStatus = IngestJobStatus.PENDING

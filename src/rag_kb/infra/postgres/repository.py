@@ -112,6 +112,7 @@ def _row_to_chunk(row: dict[str, Any]) -> Chunk:
 def _row_to_job(row: dict[str, Any]) -> IngestJob:
     return IngestJob(
         id=row["id"],
+        kb_id=row["kb_id"],
         doc_id=row["doc_id"],
         stage=row["stage"],
         status=IngestJobStatus(row["status"]),
@@ -467,32 +468,46 @@ class PostgresMetadataRepository:
     # ---------------------------------------------------------------- 摄取任务
 
     @_to_thread
-    def enqueue_ingest_job(self, doc_id: UUID) -> IngestJob:
+    def enqueue_ingest_job(self, kb_id: UUID, doc_id: UUID) -> IngestJob:
         with self._connection() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO ingest_job (doc_id, stage, status)
                 VALUES (%s, 'parse', 'pending')
                 ON CONFLICT DO NOTHING
-                RETURNING *
+                RETURNING id
                 """,
                 (doc_id,),
             )
-            row = cur.fetchone()
-            if row is None:
+            inserted = cur.fetchone()
+            job_id = inserted["id"] if inserted else None
+            if job_id is None:
                 # 已有活跃任务：返回它，避免同一文档重复摄取（幂等）。
                 cur = conn.execute(
                     """
-                    SELECT * FROM ingest_job
+                    SELECT id FROM ingest_job
                     WHERE doc_id = %s AND status IN ('pending', 'running')
                     ORDER BY created_at DESC
                     LIMIT 1
                     """,
                     (doc_id,),
                 )
-                row = cur.fetchone()
+                active = cur.fetchone()
+                job_id = active["id"] if active else None
+            if job_id is None:
+                raise ConflictError(f"文档已有活跃摄取任务: {doc_id}")
+
+            cur = conn.execute(
+                """
+                SELECT j.*, d.kb_id
+                FROM ingest_job j JOIN document d ON d.id = j.doc_id
+                WHERE j.id = %s
+                """,
+                (job_id,),
+            )
+            row = cur.fetchone()
         if row is None:
-            raise ConflictError(f"文档已有活跃摄取任务: {doc_id}")
+            raise NotFoundError("ingest job", job_id)
         return _row_to_job(row)
 
     @_to_thread
@@ -500,16 +515,23 @@ class PostgresMetadataRepository:
         with self._connection() as conn, conn.transaction():
             cur = conn.execute(
                 """
-                UPDATE ingest_job SET
-                    status = 'running', claimed_at = now(), updated_at = now()
-                WHERE id = (
-                    SELECT id FROM ingest_job
-                    WHERE status = 'pending'
-                    ORDER BY created_at
-                    FOR UPDATE SKIP LOCKED
-                    LIMIT 1
+                WITH claimed AS (
+                    UPDATE ingest_job SET
+                        status = 'running',
+                        attempts = attempts + 1,
+                        claimed_at = now(),
+                        updated_at = now()
+                    WHERE id = (
+                        SELECT id FROM ingest_job
+                        WHERE status = 'pending'
+                        ORDER BY created_at
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
+                    )
+                    RETURNING *
                 )
-                RETURNING *
+                SELECT c.*, d.kb_id
+                FROM claimed c JOIN document d ON d.id = c.doc_id
                 """
             )
             row = cur.fetchone()
@@ -524,7 +546,7 @@ class PostgresMetadataRepository:
                     stage = %s, status = %s, attempts = %s, error = %s,
                     timings = %s, claimed_at = %s, updated_at = now()
                 WHERE id = %s
-                RETURNING *
+                RETURNING id
                 """,
                 (
                     job.stage,
@@ -535,6 +557,17 @@ class PostgresMetadataRepository:
                     job.claimed_at,
                     job.id,
                 ),
+            )
+            updated = cur.fetchone()
+            if updated is None:
+                raise NotFoundError("ingest job", job.id)
+            cur = conn.execute(
+                """
+                SELECT j.*, d.kb_id
+                FROM ingest_job j JOIN document d ON d.id = j.doc_id
+                WHERE j.id = %s
+                """,
+                (job.id,),
             )
             row = cur.fetchone()
         if row is None:

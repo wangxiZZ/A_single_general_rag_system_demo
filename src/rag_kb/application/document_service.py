@@ -79,7 +79,7 @@ class DocumentService:
             raise
 
         try:
-            await self._repo.enqueue_ingest_job(doc_id)
+            await self._repo.enqueue_ingest_job(kb_id, doc_id)
         except Exception:
             # 文档行已创建但任务没入队：删除行与文件，避免留下永远不会被处理的文档。
             with contextlib.suppress(Exception):
@@ -131,7 +131,7 @@ class DocumentService:
             kb_id,
             replace(doc, status=DocumentStatus.PENDING, error=None, chunk_count=0),
         )
-        await self._repo.enqueue_ingest_job(doc_id)
+        await self._repo.enqueue_ingest_job(kb_id, doc_id)
         return retried
 
     async def delete_document(self, kb_id: UUID, doc_id: UUID) -> None:

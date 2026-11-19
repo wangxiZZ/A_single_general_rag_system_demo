@@ -116,7 +116,7 @@ async def test_repository_roundtrip_and_isolation() -> None:
         assert updated.status is DocumentStatus.CHUNKED
         assert updated.chunk_count == 2
 
-        job = await repo.enqueue_ingest_job(doc_id)
+        job = await repo.enqueue_ingest_job(kb_id, doc_id)
         claimed = await repo.claim_ingest_job()
         assert claimed is not None
         assert claimed.id == job.id

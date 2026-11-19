@@ -118,14 +118,14 @@ class FakeMetadataRepository:
         return len(await self.list_images(kb_id, doc_id))
 
     # ---- 任务 ----
-    async def enqueue_ingest_job(self, doc_id: UUID) -> IngestJob:
+    async def enqueue_ingest_job(self, kb_id: UUID, doc_id: UUID) -> IngestJob:
         for job in self.jobs:
             if job.doc_id == doc_id and job.status in (
                 IngestJobStatus.PENDING,
                 IngestJobStatus.RUNNING,
             ):
                 return job
-        job = IngestJob(id=uuid4(), doc_id=doc_id, stage="parse")
+        job = IngestJob(id=uuid4(), kb_id=kb_id, doc_id=doc_id, stage="parse")
         self.jobs.append(job)
         return job
 
@@ -135,6 +135,7 @@ class FakeMetadataRepository:
                 claimed = replace(
                     job,
                     status=IngestJobStatus.RUNNING,
+                    attempts=job.attempts + 1,
                     claimed_at=datetime.now(UTC),
                 )
                 self.jobs[index] = claimed
