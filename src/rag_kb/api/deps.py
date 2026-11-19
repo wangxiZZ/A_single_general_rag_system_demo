@@ -11,6 +11,8 @@ from fastapi import Depends, Request
 
 from rag_kb.application.document_service import DocumentService
 from rag_kb.application.kb_service import KbService
+from rag_kb.application.qa_service import QAService
+from rag_kb.application.reindex import ReindexService
 from rag_kb.application.search_service import SearchService
 
 
@@ -26,6 +28,16 @@ def get_search_service(request: Request) -> SearchService:
     return request.app.state.search_service
 
 
+def get_reindex_service(request: Request) -> ReindexService:
+    return request.app.state.reindex_service
+
+
+def get_qa_service(request: Request) -> QAService:
+    return request.app.state.qa_service
+
+
 KbServiceDep = Annotated[KbService, Depends(get_kb_service)]
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 SearchServiceDep = Annotated[SearchService, Depends(get_search_service)]
+ReindexServiceDep = Annotated[ReindexService, Depends(get_reindex_service)]
+QAServiceDep = Annotated[QAService, Depends(get_qa_service)]

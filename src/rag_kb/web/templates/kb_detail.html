@@ -5,6 +5,7 @@
 <div class="hero">
   <h1>{{ kb.name }}</h1>
   <p class="muted">{{ kb.description }}</p>
+  <p><a class="text-link" href="/web/kbs/{{ kb.id }}/ask">向这个知识库提问 →</a></p>
 </div>
 
 {% if error %}<div class="alert">{{ error }}</div>{% endif %}

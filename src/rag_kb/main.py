@@ -22,11 +22,12 @@ from fastapi.staticfiles import StaticFiles
 
 from rag_kb import __version__
 from rag_kb.api.errors import register_exception_handlers
-from rag_kb.api.routers import documents, health, kbs, search
+from rag_kb.api.routers import ask, documents, health, kbs, search
 from rag_kb.application.document_service import DocumentService
 from rag_kb.application.indexing import IndexingService
 from rag_kb.application.ingest_pipeline import IngestPipeline
 from rag_kb.application.kb_service import KbService
+from rag_kb.application.qa_service import QAService
 from rag_kb.application.reindex import ReindexService
 from rag_kb.application.search_service import SearchService
 from rag_kb.config import Settings, get_settings
@@ -163,6 +164,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             },
         )
 
+    if app.state.qa_service is None:
+        app.state.qa_service = QAService(
+            repository,
+            llm=llm,
+            max_context_tokens=settings.qa_max_context_tokens,
+            parent_max_tokens=settings.parent_max_tokens,
+            chars_per_token=settings.chars_per_token,
+        )
+
     indexer = IndexingService(
         repository,
         embedder=embedder,
@@ -255,6 +265,7 @@ def create_app(
     start_worker: bool = True,
     search_service: SearchService | None = None,
     reindex_service: ReindexService | None = None,
+    qa_service: QAService | None = None,
 ) -> FastAPI:
     """工厂函数：测试可注入自定义 Settings / fake 仓储，并关闭后台 worker。"""
     resolved = settings or get_settings()
@@ -272,6 +283,7 @@ def create_app(
     app.state.repository = repository
     app.state.search_service = search_service
     app.state.reindex_service = reindex_service
+    app.state.qa_service = qa_service
     app.state.reindex_tasks = {}
     app.state.start_worker = start_worker
     app.state.readiness_probe = lambda: collect_readiness(resolved)
@@ -281,6 +293,7 @@ def create_app(
     app.include_router(kbs.router, prefix="/api")
     app.include_router(documents.router, prefix="/api")
     app.include_router(search.router, prefix="/api")
+    app.include_router(ask.router, prefix="/api")
     app.include_router(web_routes.router)
     register_exception_handlers(app)
 

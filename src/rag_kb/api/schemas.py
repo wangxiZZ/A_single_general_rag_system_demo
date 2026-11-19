@@ -67,6 +67,31 @@ class SearchRequest(BaseModel):
     rerank: bool = False
 
 
+class CitationRead(BaseModel):
+    index: int
+    chunk_id: str
+    doc_id: UUID
+    doc_name: str
+    page_no: int | None = None
+    seq: int | None = None
+    heading_path: tuple[str, ...] = ()
+    snippet: str = ""
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    mode: SearchMode = SearchMode.HYBRID
+    top_k: int = Field(default=8, ge=1, le=20)
+
+
+class AskResponse(BaseModel):
+    answer: str
+    citations: list[CitationRead]
+    no_evidence: bool = False
+    attempted_channels: list[str] = Field(default_factory=list)
+    query_rewrites: list[str] = Field(default_factory=list)
+
+
 class ReindexAccepted(BaseModel):
     task_id: str
     status: str = "accepted"

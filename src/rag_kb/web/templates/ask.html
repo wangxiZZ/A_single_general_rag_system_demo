@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}提问 · {{ kb.name }}{% endblock %}
+{% block content %}
+<p><a href="/web/kbs/{{ kb.id }}">← 返回知识库</a></p>
+<div class="hero">
+  <h1>向「{{ kb.name }}」提问</h1>
+  <p class="muted">回答只基于检索到的证据，并标注来源编号。</p>
+</div>
+
+{% if error %}<div class="alert">{{ error }}</div>{% endif %}
+
+<section class="card">
+  <form method="post" action="/web/kbs/{{ kb.id }}/ask" class="inline-form">
+    <label>问题
+      <input name="question" required maxlength="1000" placeholder="例如：年假怎么申请？">
+    </label>
+    <label>检索模式
+      <select name="mode">
+        <option value="hybrid">hybrid</option>
+        <option value="vector">vector</option>
+        <option value="keyword">keyword</option>
+        <option value="graph">graph</option>
+        <option value="hybrid_weighted">hybrid_weighted</option>
+      </select>
+    </label>
+    <button type="submit">提问</button>
+  </form>
+</section>
+
+{% if answer %}
+<section class="card">
+  <h2>回答</h2>
+  {% if no_evidence %}<div class="alert">{{ answer }}</div>
+  {% else %}<div class="answer">{{ answer }}</div>{% endif %}
+</section>
+
+{% if citations %}
+<section class="card">
+  <h2>来源</h2>
+  <ol class="citations">
+    {% for citation in citations %}
+    <li>
+      <strong>[{{ citation.index }}] 《{{ citation.doc_name }}》</strong>
+      {% if citation.page_no %}第 {{ citation.page_no }} 页{% else %}段落 #{{ citation.seq }}{% endif %}
+      {% if citation.heading_path %}· {{ citation.heading_path | join(' > ') }}{% endif %}
+      <pre>{{ citation.snippet }}</pre>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

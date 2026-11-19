@@ -18,8 +18,11 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from rag_kb.application.document_service import DocumentService
 from rag_kb.application.kb_service import KbService
+from rag_kb.application.qa_service import QAService
+from rag_kb.application.search_service import SearchService
 from rag_kb.application.upload_validation import validate_upload
 from rag_kb.domain.errors import DomainError, NotFoundError
+from rag_kb.domain.models import SearchMode
 
 router = APIRouter(prefix="/web", tags=["web"])
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
@@ -42,8 +45,18 @@ def get_document_service(request: Request) -> DocumentService:
     return request.app.state.document_service
 
 
+def get_search_service(request: Request) -> SearchService:
+    return request.app.state.search_service
+
+
+def get_qa_service(request: Request) -> QAService:
+    return request.app.state.qa_service
+
+
 KbDep = Annotated[KbService, Depends(get_kb_service)]
 DocumentDep = Annotated[DocumentService, Depends(get_document_service)]
+SearchDep = Annotated[SearchService, Depends(get_search_service)]
+QADep = Annotated[QAService, Depends(get_qa_service)]
 
 
 def _render(
@@ -144,6 +157,81 @@ async def retry_document(
     except DomainError:
         return HTMLResponse("只有失败文档可以重试", status_code=400)
     return _render(request, "_documents.html", {"docs": documents, "kb_id": kb_id})
+
+
+@router.get("/kbs/{kb_id}/ask", response_class=HTMLResponse)
+async def ask_page(request: Request, kb_id: UUID, kb_service: KbDep) -> Response:
+    try:
+        kb = await kb_service.get_kb(kb_id)
+    except NotFoundError:
+        return RedirectResponse("/web/kbs", status_code=303)
+    return _render(request, "ask.html", {"kb": kb, "answer": None, "citations": []})
+
+
+@router.post("/kbs/{kb_id}/ask", response_class=HTMLResponse)
+async def ask_submit(
+    request: Request,
+    kb_id: UUID,
+    kb_service: KbDep,
+    search_service: SearchDep,
+    qa_service: QADep,
+) -> Response:
+    try:
+        kb = await kb_service.get_kb(kb_id)
+    except NotFoundError:
+        return RedirectResponse("/web/kbs", status_code=303)
+
+    form = await request.form()
+    question = str(form.get("question", "")).strip()
+    if not question:
+        return _render(
+            request,
+            "ask.html",
+            {"kb": kb, "answer": None, "citations": [], "error": "问题不能为空"},
+            status_code=400,
+        )
+    try:
+        mode = SearchMode(str(form.get("mode", "hybrid")))
+    except ValueError:
+        mode = SearchMode.HYBRID
+
+    try:
+        hits = await search_service.search(kb_id, question, mode=mode, top_k=8)
+        attempted = (
+            ["vector", "keyword", "graph"]
+            if mode in {SearchMode.HYBRID, SearchMode.HYBRID_WEIGHTED}
+            else [mode.value]
+        )
+        result = await qa_service.answer(kb_id, question, hits, attempted_channels=attempted)
+    except DomainError as exc:
+        return _render(
+            request,
+            "ask.html",
+            {"kb": kb, "answer": None, "citations": [], "error": exc.message},
+            status_code=503,
+        )
+
+    citations = [
+        {
+            "index": number,
+            "doc_name": result.evidence[number - 1].hit.doc_name,
+            "page_no": result.evidence[number - 1].body.page_no,
+            "seq": result.evidence[number - 1].body.seq,
+            "heading_path": result.evidence[number - 1].body.heading_path,
+            "snippet": result.evidence[number - 1].text[:300],
+        }
+        for number in result.citations
+    ]
+    return _render(
+        request,
+        "ask.html",
+        {
+            "kb": kb,
+            "answer": result.answer,
+            "citations": citations,
+            "no_evidence": result.no_evidence,
+        },
+    )
 
 
 @router.get("/kbs/{kb_id}/documents/{doc_id}/chunks", response_class=HTMLResponse)

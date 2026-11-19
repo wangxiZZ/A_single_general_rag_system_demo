@@ -111,3 +111,22 @@ th { color: var(--muted); font-weight: 600; }
   font-size: 13px;
   line-height: 1.5;
 }
+
+.answer { white-space: pre-wrap; line-height: 1.7; }
+.citations li { margin-bottom: 14px; }
+.citations pre {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+select {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 14px;
+  background: #fff;
+}
