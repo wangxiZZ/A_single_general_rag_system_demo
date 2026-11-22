@@ -13,6 +13,7 @@ from rag_kb.domain.errors import (
     DuplicateDocumentError,
     FileTooLargeError,
     NotFoundError,
+    StorageError,
     ValidationError,
 )
 from rag_kb.domain.models import DocumentStatus, IngestJobStatus
@@ -147,6 +148,83 @@ class RecordingIndex:
     async def delete_by_doc(self, kb_id, doc_id) -> int:
         self.calls.append((kb_id, doc_id))
         return 1
+
+
+class FailingIndex(RecordingIndex):
+    """记录调用但抛错，用来验证"三路都尝试 + 报错可重试"。"""
+
+    async def delete_by_doc(self, kb_id, doc_id) -> int:
+        self.calls.append((kb_id, doc_id))
+        raise StorageError("milvus 不可用")
+
+
+async def test_retry_purges_indexes_before_reenqueue(
+    kb_service: KbService,
+    repo: FakeMetadataRepository,
+    storage: FakeStorage,
+) -> None:
+    """重试前必须清三路索引：否则旧向量/词法/图条目在重试完成前仍可召回。"""
+    vector, lexical, graph = RecordingIndex(), RecordingIndex(), RecordingIndex()
+    service = DocumentService(
+        repo,
+        storage,
+        vector_store=vector,  # type: ignore[arg-type]
+        lexical_index=lexical,  # type: ignore[arg-type]
+        graph_store=graph,  # type: ignore[arg-type]
+    )
+    kb = await kb_service.create_kb("测试库")
+    doc = await service.upload_document(kb.id, filename="a.pdf", mime="application/pdf", data=b"x")
+    repo.jobs[0] = replace(repo.jobs[0], status=IngestJobStatus.FAILED)
+    await service.mark_failed(kb.id, doc.id, "解析失败")
+
+    retried = await service.retry_document(kb.id, doc.id)
+
+    assert retried.status is DocumentStatus.PENDING
+    assert retried.error is None
+    for port in (vector, lexical, graph):
+        assert port.calls == [(kb.id, doc.id)]
+
+
+async def test_delete_document_reports_partial_index_failure(
+    kb_service: KbService, repo: FakeMetadataRepository, storage: FakeStorage
+) -> None:
+    """某一路删不掉时不能静默成功，也不能只尝试到出错那一行为止。"""
+    vector, lexical, graph = RecordingIndex(), FailingIndex(), RecordingIndex()
+    service = DocumentService(
+        repo,
+        storage,
+        vector_store=vector,  # type: ignore[arg-type]
+        lexical_index=lexical,  # type: ignore[arg-type]
+        graph_store=graph,  # type: ignore[arg-type]
+    )
+    kb = await kb_service.create_kb("测试库")
+    doc = await service.upload_document(kb.id, filename="a.pdf", mime="application/pdf", data=b"x")
+
+    with pytest.raises(StorageError, match="删除索引"):
+        await service.delete_document(kb.id, doc.id)
+
+    # 三路都尝试过；DB 行保留，便于整体重试（delete 是幂等的）。
+    assert vector.calls and lexical.calls and graph.calls
+    assert doc.id in repo.documents
+
+
+async def test_delete_kb_reports_partial_index_failure(
+    repo: FakeMetadataRepository, storage: FakeStorage
+) -> None:
+    service = KbService(
+        repo,
+        storage,
+        vector_store=FailingIndex(),  # type: ignore[arg-type]
+    )
+    kb = await service.create_kb("测试库")
+    await DocumentService(repo, storage).upload_document(
+        kb.id, filename="a.pdf", mime="application/pdf", data=b"x"
+    )
+
+    with pytest.raises(StorageError, match="删除知识库索引"):
+        await service.delete_kb(kb.id)
+
+    assert await repo.get_kb(kb.id) is not None
 
 
 async def test_delete_document_cleans_all_indexes(

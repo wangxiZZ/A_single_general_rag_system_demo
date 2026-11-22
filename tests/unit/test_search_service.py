@@ -86,13 +86,20 @@ class FakeReranker:
         return list(reversed(list(candidates)))[:top_k]
 
 
-def _chunk(chunk_id: str, content: str, seq: int) -> Chunk:
+def _chunk(
+    chunk_id: str,
+    content: str,
+    seq: int,
+    *,
+    kind: ChunkKind = ChunkKind.TEXT,
+    image_id: UUID | None = None,
+) -> Chunk:
     return Chunk(
         id=chunk_id,
         kb_id=KB_ID,
         doc_id=DOC_ID,
         level=ChunkLevel.CHILD,
-        kind=ChunkKind.TEXT,
+        kind=kind,
         content=content,
         seq=seq,
         char_start=0,
@@ -100,6 +107,7 @@ def _chunk(chunk_id: str, content: str, seq: int) -> Chunk:
         token_count=len(content),
         chunker_version="v1",
         page_no=1,
+        image_id=image_id,
     )
 
 
@@ -176,3 +184,38 @@ async def test_hybrid_degrades_when_vector_channel_missing() -> None:
     )
     assert {hit.chunk_id for hit in hits} == {"b" * 32, "c" * 32}
     assert hits[0].channels == ("keyword", "graph")
+
+
+class _SingleHitVectorStore:
+    """只返回一个固定 chunk 的向量库，用来把某类块（如图片块）单独拎出来断言。"""
+
+    def __init__(self, chunk_id: str) -> None:
+        self._chunk_id = chunk_id
+
+    async def search(self, kb_id: UUID, vector, top_k: int) -> list[VectorHit]:
+        return [VectorHit(self._chunk_id, 0.9, 1)]
+
+
+async def test_image_hit_carries_image_url() -> None:
+    """图片块命中时必须带回原图地址，否则"图片进了检索链路"无法回到原文位置。"""
+    image_chunk_id = "d" * 32
+    image_id = uuid4()
+    repo = FakeRepository()
+    repo.chunks[image_chunk_id] = _chunk(
+        image_chunk_id, "【图片】架构图", 3, kind=ChunkKind.IMAGE, image_id=image_id
+    )
+    service = SearchService(
+        repo,
+        embedder=FakeEmbedder(),  # type: ignore[arg-type]
+        vector_store=_SingleHitVectorStore(image_chunk_id),  # type: ignore[arg-type]
+        top_k=5,
+    )
+
+    hits = await service.search(KB_ID, "架构图", mode=SearchMode.VECTOR)
+
+    assert hits[0].image_url == f"/api/kbs/{KB_ID}/documents/{DOC_ID}/images/{image_id}"
+
+
+async def test_text_hit_has_no_image_url() -> None:
+    hits = await _service().search(KB_ID, "查询", mode=SearchMode.VECTOR)
+    assert hits[0].image_url is None

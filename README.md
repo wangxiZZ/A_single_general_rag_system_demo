@@ -3,13 +3,16 @@
 创建知识库 → 上传 PDF/docx（含内嵌图片）→ 解析分块 → 向量/关键词/图谱三路召回 →
 基于证据回答。以 Server 形式运行，同时提供 REST、Web 管理页、MCP Server 与 Claude Code Skill。
 
-> **进度**：M0–M7 全部完成（含 MCP/Skill/演示、测试与文档交付、检索评测）。
+> **进度**：M0–M8 全部完成（含 MCP/Skill/演示、测试与文档交付、检索评测；
+> M8 修复审计缺口：图片原图接口、失败清理、删除补偿、中文查询分词兜底）。
 > 里程碑与验收标准见 [实施计划](docs/实施计划.md)，任务状态见 [项目任务清单](docs/项目任务清单.md)。
 
 ## 能做什么
 
 - **知识库与文档**：建库/删库、上传/查看/重试/删除 PDF 与 docx，同库 sha256 去重；
 - **摄取**：标题树 + 父子分块、图片 VLM 描述、三路索引，状态 `pending → … → ready`；
+- **图片可回溯**：命中图片块时返回 `image_url`，原图接口用响应头
+  `X-Page-No`/`X-Bbox`/`X-Seq` 回带位置（docx 无页码与坐标，不伪造）；
 - **检索**：`vector` / `keyword` / `graph` / `hybrid`（RRF）/ `hybrid_weighted`，可选重排；
 - **回答**：证据拼装、父块回填、引用编号回校验、无证据拒答；
 - **图谱**：实体/关系抽取、实体链接、多跳展开，每条边带 `chunk_id` 与证据区间；
@@ -207,6 +210,9 @@ curl -s localhost:8000/api/kbs/<kb_id>/documents/<doc_id>
 curl -s localhost:8000/api/kbs/<kb_id>/documents/<doc_id>/chunks
 curl -s -X POST localhost:8000/api/kbs/<kb_id>/documents/<doc_id>/retry
 curl -s -X DELETE localhost:8000/api/kbs/<kb_id>/documents/<doc_id>
+
+# 原图（搜索命中的 image_url 就是它；响应头带 X-Page-No / X-Bbox / X-Seq 定位）
+curl -s localhost:8000/api/kbs/<kb_id>/documents/<doc_id>/images/<image_id> -o image.png -D -
 
 # 检索与问答
 curl -s -X POST localhost:8000/api/kbs/<kb_id>/search \

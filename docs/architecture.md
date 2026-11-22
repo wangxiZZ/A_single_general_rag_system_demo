@@ -64,7 +64,7 @@ neo4j / 本地文件）由适配器用 `anyio.to_thread.run_sync` 包装。`Pars
 | `VLM` | `describe_image` | 同上 |
 | `Reranker` | `rerank` | `infra/llm/rerank.py` |
 | `Parser` | `parse(data, filename, mime)` | `infra/parsers/` |
-| `Storage` | 上传/图片落盘、读取、删除 | `infra/storage/local.py` |
+| `Storage` | 上传/图片落盘、读取、删除（整篇或仅图片） | `infra/storage/local.py` |
 
 端口只表达能力，不暴露第三方类型；例如 `SearchHit`、`Entity`、`GraphEvidence` 都是
 `domain/models.py` 里的 dataclass。
@@ -130,6 +130,8 @@ worker (lifespan 内 asyncio 任务)
   → claim_ingest_job (FOR UPDATE SKIP LOCKED)
   → IngestPipeline：
        parsing   : Parser.parse → blocks（PDF 带 page/bbox；docx 无页码）
+                   parse 与分块是同步 CPU 方法，用 asyncio.to_thread 丢线程池，
+                   避免解析大 PDF 期间阻塞事件循环（健康检查/其他请求）
        chunked   : 标题树 → 父块(≤1200 token) → 子块(目标 320，overlap 15%)
        图片       : 落盘 + VLM caption → 带 low_weight 的 image chunk
        persist   : replace_images / replace_chunks → document=chunked
@@ -138,9 +140,15 @@ worker (lifespan 内 asyncio 任务)
                      → document=ready
 ```
 
-失败：`IngestWorker` 把 `ingest_job` 置 `failed`（记录 stage/error/timings），文档置
-`failed`；索引层先清理三路、chunk、图片行再置失败，保证"无脏索引"。重试走
-`POST /documents/{id}/retry`：清 chunk、状态回 `pending`、重新入队。
+失败：**管线自己负责收尾**——清理 `chunk`、`doc_image` 行、抽出的图片文件，并把文档置
+`failed`（`error` 截断 2000 字符）；索引阶段的失败另外由 `IndexingService.cleanup_failed`
+清三路索引。worker 只写 `ingest_job`（stage/error/timings），不依赖它来清数据。
+`IngestAbortedError`（tombstone）不标 failed。
+
+重试走 `POST /documents/{id}/retry`：先清三路索引 + `chunk` + `doc_image` 行 + 图片文件
+（**保留上传件**，重试要靠它重新解析），状态回 `pending`，`ingest_job.attempts` 延续历史
+最大值后重新计数，再入队。任一步清理失败按 `storage_error` 上报且不进入 pending，
+调用方重试删除是幂等的。
 
 ### 5.2 检索
 
@@ -153,8 +161,13 @@ POST /search {query, mode, top_k, rerank}
   → hybrid  : RRF(k=60) 或 weighted(min-max)
   → 可选 rerank（默认关闭，需显式传参且配置了端点）
   → 按 chunk_id 批量回填 doc/snippet/heading/page
+  → 图片块补 image_url（指向原图接口）
   → 写 query_log（延迟、命中 id、各通道候选数）
 ```
+
+图片块的 `image_url` 是 `/api/kbs/{kb}/documents/{doc}/images/{img}`：原图由
+`GET` 该路径返回字节，位置信息放在响应头（`X-Page-No` / `X-Bbox` / `X-Seq`），
+前端拿到 `<img>` 时同步就知道出处；docx 图片没有页码与坐标时不返回这两个头。
 
 任一通道不可用（如未配置 EMBED_API_KEY）时 hybrid 降级到其余通道，而不是整体失败；
 显式请求单一通道则抛配置错误。
@@ -189,6 +202,11 @@ delete_document: vector.delete_by_doc → lexical.delete_by_doc → graph.delete
 delete_kb      : 对每个文档执行三路删除 → repo.delete_kb → 删除文件目录
 ```
 
+三路删除**全部尝试完再判断成败**（`application/deletion.py` 的 `purge_indexes`）：
+任一路失败都会在最后汇总成 `storage_error` 上报，DB 行与文件保持原样，整体重试即可
+收敛（delete 本身幂等）。遇错即停会留下"文档还在、某个通道已空"的半删状态，
+反而比失败更难排查。
+
 摄取与删除并发时靠 **tombstone**：管线在解析后、图片后、落库前各检查一次文档是否仍存在；
 不存在则抛 `IngestAbortedError`，worker 放弃任务（不标 failed），管线补清已写文件。
 删除产生的残留数据由删除路径负责，不依赖 worker。
@@ -205,6 +223,10 @@ delete_kb      : 对每个文档执行三路删除 → repo.delete_kb → 删除
 5. **状态即能力**：`ready` 表示三路索引全部完成；`chunked` 只代表解析分块完成。
 6. **失败无残留**：三路索引、chunk、图片行与 `chunk_count` 一起清理。
 7. **配置单一来源**：`config.py` 的 `Settings`，compose `environment` 是容器唯一透传通道。
+8. **图片可回溯**：图片块命中时 `image_url` 指向原图接口；原图接口用响应头回带
+   `page_no/bbox/seq`（docx 没有就留空，不伪造）。
+9. **阻塞操作不出现在协程里**：`Parser.parse` 与分块由 `asyncio.to_thread` 丢线程池；
+   infra 的同步 SDK 用 `anyio.to_thread.run_sync` 包装。
 
 ## 8. 启动装配（lifespan）
 

@@ -46,15 +46,37 @@ def _to_thread[**P, R](func: Callable[P, R]) -> Callable[P, Awaitable[R]]:
 def stopwords() -> frozenset[str]:
     if not _STOPWORDS_FILE.exists():
         return frozenset()
+    # 支持 `#` 注释行：停用词表需要按用途分组（虚词/通用词），注释不该被当成词条。
     return frozenset(
-        line.strip()
+        stripped
         for line in _STOPWORDS_FILE.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        if (stripped := line.strip()) and not stripped.startswith("#")
     )
 
 
 def _is_single_cjk(token: str) -> bool:
     return len(token) == 1 and "一" <= token <= "鿿"
+
+
+# 连续单字 run 的长度上限：超过它只保留整串、不再补 2-gram。
+# 正常中文词/短语的 run 是 2–4 个字，超过 32 的通常是整句被切碎，逐字补 bigram
+# 会让 lex_tokens 爆炸（n 个字产生 n-1 个 token），收益远小于成本。
+_MAX_BIGRAM_RUN = 32
+
+
+def _emit_run(run: str, tokens: list[str]) -> None:
+    """把一段连续单字按"整串 + 2-gram"写入 tokens。
+
+    只发整串是行不通的：jieba 对问句常把词切成单字（「年假有几天」→ 年/假/有/几天），
+    合并后的「年假有」在文档里根本不存在，于是该查询 0 命中。补 2-gram 让「年假」这种
+    文档里真实存在的词重新成为候选——查询侧是 OR 拼接，多出来的 noise token 只影响排序，
+    不会漏召回。索引侧用同一规则，保证两侧 token 空间一致。
+    """
+    if not run:
+        return
+    tokens.append(run)
+    if 1 < len(run) <= _MAX_BIGRAM_RUN:
+        tokens.extend(run[index : index + 2] for index in range(len(run) - 1))
 
 
 def tokenize(text: str) -> list[str]:
@@ -65,7 +87,7 @@ def tokenize(text: str) -> list[str]:
     def flush() -> None:
         nonlocal buffer
         if buffer:
-            tokens.append(buffer)
+            _emit_run(buffer, tokens)
             buffer = ""
 
     # jieba 对未登录复合词（如"年假"）常切成单字；把连续单字合并回复合词，
@@ -82,7 +104,9 @@ def tokenize(text: str) -> list[str]:
         flush()
         tokens.append(token)
     flush()
-    return tokens
+    # 去重保序：bigram 可能与整串或独立词重复，重复 token 只会让 lex_tokens 变长，
+    # 对 to_tsvector 的位置计算没有正收益。
+    return list(dict.fromkeys(tokens))
 
 
 def build_tsquery(text: str) -> str:

@@ -10,6 +10,7 @@ import asyncio
 from uuid import UUID
 
 from rag_kb.application.entity_linking import link_seed_entities
+from rag_kb.application.links import chunk_image_path
 from rag_kb.domain.models import SearchHit
 from rag_kb.domain.ports import GraphStore, MetadataRepository
 
@@ -62,6 +63,8 @@ async def graph_search(
                 snippet=chunk.content[:300],
                 heading_path=chunk.heading_path,
                 page_no=chunk.page_no,
+                # 与向量/词法通道保持一致：图片证据必须能回到原图。
+                image_url=chunk_image_path(kb_id, chunk),
                 debug={
                     "hops": item.hops,
                     "seed_ids": list(item.seed_ids),

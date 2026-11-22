@@ -11,7 +11,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from rag_kb.config import Settings
-from rag_kb.domain.models import BBox, Chunk, ChunkKind, ChunkLevel, DocumentStatus
+from rag_kb.domain.models import BBox, Chunk, ChunkKind, ChunkLevel, DocImage, DocumentStatus
 from rag_kb.main import create_app
 from tests.unit.fakes import FakeMetadataRepository
 
@@ -58,6 +58,101 @@ async def test_kb_crud(client: AsyncClient) -> None:
     deleted = await client.delete(f"/api/kbs/{kb_id}")
     assert deleted.status_code == 204
     assert (await client.get(f"/api/kbs/{kb_id}")).status_code == 404
+
+
+async def test_get_document_image_returns_bytes_and_location(
+    client: AsyncClient, repo: FakeMetadataRepository, tmp_path: Path
+) -> None:
+    kb = await _create_kb(client, "图片库")
+    upload = await client.post(
+        f"/api/kbs/{kb['id']}/documents",
+        files={"file": ("a.pdf", b"%PDF-1.7\nhello", "application/pdf")},
+    )
+    doc_id = UUID(upload.json()["id"])
+    image_id = uuid4()
+    relative = f"images/{kb['id']}/{doc_id}/{image_id}.png"
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"\x89PNG\r\n\x1a\n")
+    repo.images[doc_id] = [
+        DocImage(
+            id=image_id,
+            kb_id=UUID(kb["id"]),
+            doc_id=doc_id,
+            seq=2,
+            page_no=3,
+            bbox=BBox(1.0, 2.0, 30.0, 40.0),
+            file_path=relative,
+        )
+    ]
+
+    response = await client.get(f"/api/kbs/{kb['id']}/documents/{doc_id}/images/{image_id}")
+
+    assert response.status_code == 200
+    assert response.content.startswith(b"\x89PNG")
+    assert response.headers["content-type"] == "image/png"
+    # 位置信息与字节在同一个响应里，前端拿到 <img> 时同步就知道出处。
+    assert response.headers["X-Page-No"] == "3"
+    assert response.headers["X-Bbox"] == "1.00,2.00,30.00,40.00"
+    assert response.headers["X-Seq"] == "2"
+
+
+async def test_get_document_image_without_page_or_bbox(
+    client: AsyncClient, repo: FakeMetadataRepository, tmp_path: Path
+) -> None:
+    """docx 图片没有页码与坐标：不返回这两个头，而不是伪造。"""
+    kb = await _create_kb(client, "docx 图片")
+    upload = await client.post(
+        f"/api/kbs/{kb['id']}/documents",
+        files={
+            "file": (
+                "a.docx",
+                b"PK\x03\x04" + b"x" * 8,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    doc_id = UUID(upload.json()["id"])
+    image_id = uuid4()
+    relative = f"images/{kb['id']}/{doc_id}/{image_id}.png"
+    (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / relative).write_bytes(b"\x89PNG\r\n\x1a\n")
+    repo.images[doc_id] = [
+        DocImage(
+            id=image_id,
+            kb_id=UUID(kb["id"]),
+            doc_id=doc_id,
+            seq=0,
+            page_no=None,
+            bbox=None,
+            file_path=relative,
+        )
+    ]
+
+    response = await client.get(f"/api/kbs/{kb['id']}/documents/{doc_id}/images/{image_id}")
+
+    assert response.status_code == 200
+    assert "X-Page-No" not in response.headers
+    assert "X-Bbox" not in response.headers
+    assert response.headers["X-Seq"] == "0"
+
+
+async def test_get_missing_document_image_returns_404(
+    client: AsyncClient, repo: FakeMetadataRepository, tmp_path: Path
+) -> None:
+    kb = await _create_kb(client)
+    upload = await client.post(
+        f"/api/kbs/{kb['id']}/documents",
+        files={"file": ("a.pdf", b"%PDF-1.7\nhello", "application/pdf")},
+    )
+    doc_id = UUID(upload.json()["id"])
+
+    missing_image = await client.get(f"/api/kbs/{kb['id']}/documents/{doc_id}/images/{uuid4()}")
+    assert missing_image.status_code == 404
+    assert missing_image.json()["code"] == "not_found"
+
+    missing_doc = await client.get(f"/api/kbs/{kb['id']}/documents/{uuid4()}/images/{uuid4()}")
+    assert missing_doc.status_code == 404
 
 
 async def test_create_kb_rejects_blank_name(client: AsyncClient) -> None:

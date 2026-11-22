@@ -15,6 +15,7 @@ from uuid import UUID
 
 from rag_kb.application.fusion import reciprocal_rank_fusion, weighted_fusion
 from rag_kb.application.graph_search import graph_search
+from rag_kb.application.links import chunk_image_path
 from rag_kb.domain.errors import (
     ConfigurationError,
     DependencyUnavailableError,
@@ -228,6 +229,9 @@ class SearchService:
                     snippet=chunk.content[:300],
                     heading_path=chunk.heading_path,
                     page_no=chunk.page_no,
+                    # 图片块必须把"在哪能看到原图"一起返回，否则检索结果只能证明
+                    # "这里有张图"，无法回到原文位置——题目对图片的要求正是后者。
+                    image_url=chunk_image_path(kb_id, chunk),
                     debug={"rank": rank, "raw_score": score},
                 )
             )

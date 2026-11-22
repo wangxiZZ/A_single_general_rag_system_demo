@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
+from rag_kb.application.deletion import ensure_purged, purge_indexes
 from rag_kb.domain.errors import NotFoundError, ValidationError
 from rag_kb.domain.models import KB
 from rag_kb.domain.ports import (
@@ -54,13 +55,20 @@ class KbService:
         await self.get_kb(kb_id)
         documents = await self._repo.list_documents(kb_id)
         # 先清三路索引，再删 DB 与文件；任一步失败都向上抛，避免"接口 200 但仍有召回"。
+        # 所有文档的失败一起收集：中途停下会留下"库还在、部分通道已空"的半删状态，
+        # 而 delete 是幂等的，整体重试即可收敛。
+        failures: list[str] = []
         for document in documents:
-            if self._vector is not None:
-                await self._vector.delete_by_doc(kb_id, document.id)
-            if self._lexical is not None:
-                await self._lexical.delete_by_doc(kb_id, document.id)
-            if self._graph is not None:
-                await self._graph.delete_by_doc(kb_id, document.id)
+            failures.extend(
+                await purge_indexes(
+                    kb_id,
+                    document.id,
+                    vector_store=self._vector,
+                    lexical_index=self._lexical,
+                    graph_store=self._graph,
+                )
+            )
+        ensure_purged(failures, action="删除知识库索引")
         await self._repo.delete_kb(kb_id)
         for document in documents:
             await self._storage.delete_document(kb_id, document.id)

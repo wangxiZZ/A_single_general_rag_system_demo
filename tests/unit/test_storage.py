@@ -60,6 +60,21 @@ async def test_save_image_and_delete_document(storage: LocalStorage, tmp_path: P
     assert not (tmp_path / image).exists()
 
 
+async def test_delete_images_keeps_upload_for_retry(storage: LocalStorage, tmp_path: Path) -> None:
+    """重试失败文档时必须保留上传件（要重新解析），只清抽出的图片。"""
+    kb_id, doc_id = uuid4(), uuid4()
+    upload = await storage.save_upload(kb_id, doc_id, "a.pdf", b"pdf")
+    image = await storage.save_image(kb_id, doc_id, "img-1", b"png", ext=".png")
+
+    await storage.delete_images(kb_id, doc_id)
+
+    assert not (tmp_path / image).exists()
+    assert (tmp_path / upload).exists()
+    assert await storage.read(upload) == b"pdf"
+    # 幂等：没有图片目录时再删一次不应抛错。
+    await storage.delete_images(kb_id, doc_id)
+
+
 async def test_delete_is_idempotent(storage: LocalStorage) -> None:
     await storage.delete("uploads/missing/file.pdf")
     await storage.delete_document(uuid4(), uuid4())

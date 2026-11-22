@@ -13,20 +13,44 @@
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 from uuid import UUID
 
 import anyio
 from pymilvus import DataType, MilvusClient
+from pymilvus.exceptions import MilvusException
 
-from rag_kb.domain.errors import ConfigurationError, ValidationError
+from rag_kb.domain.errors import (
+    ConfigurationError,
+    DependencyUnavailableError,
+    ValidationError,
+)
 from rag_kb.domain.models import ChunkLevel, VectorHit, VectorRecord
 
 
 def _to_thread[**P, R](func: Callable[P, R]) -> Callable[P, Awaitable[R]]:
     async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         return await anyio.to_thread.run_sync(lambda: func(*args, **kwargs))
+
+    return wrapper
+
+
+def _guard[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+    """把 pymilvus 的异常翻译成领域异常。
+
+    必须写在 ``_to_thread`` 里层（同步方法层）：异常是子线程里抛出的，只有在那里转换，
+    上层才能拿到稳定的错误码。不转换的后果是 Milvus 掉线表现为 500 而不是 503，
+    而且异常文本里可能带上连接串；领域异常只保留"依赖不可用: milvus"这一层信息。
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return func(*args, **kwargs)
+        except MilvusException as exc:
+            raise DependencyUnavailableError("milvus") from exc
 
     return wrapper
 
@@ -56,9 +80,10 @@ class MilvusVectorStore:
         await anyio.to_thread.run_sync(self._client.close)
 
     @_to_thread
+    @_guard
     def ensure_collection(self, dimension: int) -> None:
         if dimension < 1:
-            raise ValueError("dimension 必须 >= 1")
+            raise ValidationError(f"dimension 必须 >= 1，当前 {dimension}")
 
         if self._client.has_collection(self._collection):
             actual = self._collection_dimension()
@@ -101,6 +126,7 @@ class MilvusVectorStore:
         raise ConfigurationError(f"collection {self._collection} 缺少 vector 字段")
 
     @_to_thread
+    @_guard
     def upsert(self, kb_id: UUID, records: Sequence[VectorRecord]) -> None:
         if not records:
             return
@@ -126,6 +152,7 @@ class MilvusVectorStore:
         self._client.upsert(collection_name=self._collection, data=rows)
 
     @_to_thread
+    @_guard
     def search(self, kb_id: UUID, vector: Sequence[float], top_k: int) -> list[VectorHit]:
         if self._dimension is None:
             raise ConfigurationError("调用 search 前必须先 ensure_collection")
@@ -150,6 +177,7 @@ class MilvusVectorStore:
         ]
 
     @_to_thread
+    @_guard
     def delete_by_doc(self, kb_id: UUID, doc_id: UUID) -> int:
         result = self._client.delete(
             collection_name=self._collection,
@@ -158,6 +186,7 @@ class MilvusVectorStore:
         return _delete_count(result)
 
     @_to_thread
+    @_guard
     def count(self, kb_id: UUID, doc_id: UUID | None = None) -> int:
         expr = f'kb_id == "{kb_id}"'
         if doc_id is not None:

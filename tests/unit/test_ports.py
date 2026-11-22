@@ -56,7 +56,7 @@ ASYNC_METHODS: dict[type, tuple[str, ...]] = {
     LLM: ("chat", "structured_json"),
     VLM: ("describe_image",),
     Reranker: ("rerank",),
-    Storage: ("save_upload", "save_image", "read", "delete", "delete_document"),
+    Storage: ("save_upload", "save_image", "read", "delete", "delete_images", "delete_document"),
 }
 
 

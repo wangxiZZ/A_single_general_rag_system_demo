@@ -11,14 +11,16 @@ import hashlib
 from dataclasses import replace
 from uuid import UUID, uuid4
 
+from rag_kb.application.deletion import ensure_purged, purge_indexes
 from rag_kb.domain.errors import (
     ConflictError,
     DuplicateDocumentError,
     FileTooLargeError,
     NotFoundError,
+    StorageError,
     ValidationError,
 )
-from rag_kb.domain.models import Chunk, Document, DocumentStatus
+from rag_kb.domain.models import Chunk, DocImage, Document, DocumentStatus
 from rag_kb.domain.ports import (
     GraphStore,
     LexicalIndex,
@@ -118,6 +120,25 @@ class DocumentService:
         await self.get_document(kb_id, doc_id)
         return await self._repo.list_chunks(kb_id, doc_id)
 
+    async def get_image(self, kb_id: UUID, doc_id: UUID, image_id: UUID) -> tuple[DocImage, bytes]:
+        """取原图；用于 ``GET .../images/{img_id}`` 与检索结果的 ``image_url``。
+
+        用 ``list_images`` 过滤而不是新增一个 ``get_image`` 端口方法：一篇文档的图片数量
+        是个位数到几十，多一次内存过滤比给端口加一个只服务单条查询的方法更划算，也避免
+        十个端口实现都要跟着改。已删除的图片返回 404 而不是 500。
+        """
+        await self.get_document(kb_id, doc_id)
+        images = await self._repo.list_images(kb_id, doc_id)
+        image = next((item for item in images if item.id == image_id), None)
+        if image is None:
+            raise NotFoundError("document image", image_id)
+        try:
+            data = await self._storage.read(image.file_path)
+        except StorageError as exc:
+            # 行还在但文件被外部清掉：给出可排查的信息，不要让它变成 500 无上下文。
+            raise StorageError(f"图片文件不可读: {image.file_path} ({exc.message})") from exc
+        return image, data
+
     async def transition_document(
         self, kb_id: UUID, doc_id: UUID, target: DocumentStatus
     ) -> Document:
@@ -143,7 +164,22 @@ class DocumentService:
         if doc.status is not DocumentStatus.FAILED:
             raise ValidationError(f"只有 failed 文档可以重试，当前为 {doc.status.value}")
 
+        # 重试等价于"重新摄取"，所以旧数据必须先清干净：只删 chunk 会留下上一次
+        # 失败前写进去的向量/词法/图条目，重试完成前旧内容仍可被召回（脏命中），
+        # 而删除后的验收口径是"删后三通道 0 命中"。
+        failures = await purge_indexes(
+            kb_id,
+            doc_id,
+            vector_store=self._vector,
+            lexical_index=self._lexical,
+            graph_store=self._graph,
+        )
+        ensure_purged(failures, action="清理旧索引", doc_id=doc_id)
+
         await self._repo.delete_chunks(kb_id, doc_id)
+        await self._repo.replace_images(kb_id, doc_id, [])
+        # 上传件要保留：重试靠它重新解析；只清抽出来的图片，避免孤儿文件。
+        await self._storage.delete_images(kb_id, doc_id)
         retried = await self._repo.update_document(
             kb_id,
             replace(doc, status=DocumentStatus.PENDING, error=None, chunk_count=0),
@@ -153,12 +189,15 @@ class DocumentService:
 
     async def delete_document(self, kb_id: UUID, doc_id: UUID) -> None:
         await self.get_document(kb_id, doc_id)
-        if self._vector is not None:
-            await self._vector.delete_by_doc(kb_id, doc_id)
-        if self._lexical is not None:
-            await self._lexical.delete_by_doc(kb_id, doc_id)
-        if self._graph is not None:
-            await self._graph.delete_by_doc(kb_id, doc_id)
+        # 三路全试一遍再判断成败：遇错即停会让调用方无法知道其余通道的状态。
+        failures = await purge_indexes(
+            kb_id,
+            doc_id,
+            vector_store=self._vector,
+            lexical_index=self._lexical,
+            graph_store=self._graph,
+        )
+        ensure_purged(failures, action="删除索引", doc_id=doc_id)
         # DB 是权威数据；文件清理失败会向上抛，但不会让文档"复活"。
         await self._repo.delete_document(kb_id, doc_id)
         await self._storage.delete_document(kb_id, doc_id)

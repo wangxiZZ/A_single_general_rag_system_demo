@@ -112,13 +112,33 @@ class LocalStorage:
         self._resolve(path).unlink(missing_ok=True)
 
     @_to_thread
+    def delete_images(self, kb_id: UUID, doc_id: UUID) -> None:
+        """只删抽出的图片目录。
+
+        重试失败文档时必须保留上传件（要靠它重新解析），但又不能让上一次抽出的图片
+        变成磁盘孤儿——两个诉求同时成立，所以删除粒度做到"图片目录"这一级。
+        """
+        _, image_dir = self._document_dirs(kb_id, doc_id)
+        self._remove_dir(image_dir)
+
+    @_to_thread
     def delete_document(self, kb_id: UUID, doc_id: UUID) -> None:
         upload_dir, image_dir = self._document_dirs(kb_id, doc_id)
         for directory in (upload_dir, image_dir):
-            shutil.rmtree(directory, ignore_errors=True)
-            # 删除空的知识库目录，避免 data/ 下积累空目录；目录非空时 rmdir 会失败，忽略即可。
-            with contextlib.suppress(OSError):
-                directory.parent.rmdir()
+            self._remove_dir(directory)
+
+    def _remove_dir(self, directory: Path) -> None:
+        if not directory.exists():
+            return
+        try:
+            shutil.rmtree(directory)
+        except OSError as exc:
+            # 不能像以前那样 ignore_errors：删除验收口径是"磁盘文件不存在"，
+            # 静默失败会留下看不见的残留，而且调用方以为已经删干净。
+            raise StorageError(f"删除目录失败: {directory} ({exc})") from exc
+        # 顺手删除空的知识库目录，避免 data/ 下积累空目录；目录非空时 rmdir 失败，忽略。
+        with contextlib.suppress(OSError):
+            directory.parent.rmdir()
 
 
 __all__ = ["LocalStorage", "safe_ext", "safe_filename"]

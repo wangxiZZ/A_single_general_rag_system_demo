@@ -175,6 +175,11 @@ class FakeStorage:
     async def delete(self, path: str) -> None:
         self.files.pop(path, None)
 
+    async def delete_images(self, kb_id: UUID, doc_id: UUID) -> None:
+        prefix = f"images/{kb_id}/{doc_id}/"
+        for path in [item for item in self.files if item.startswith(prefix)]:
+            del self.files[path]
+
     async def delete_document(self, kb_id: UUID, doc_id: UUID) -> None:
         prefixes = (f"uploads/{kb_id}/{doc_id}/", f"images/{kb_id}/{doc_id}/")
         for path in list(self.files):

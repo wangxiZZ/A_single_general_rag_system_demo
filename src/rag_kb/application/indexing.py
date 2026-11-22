@@ -8,10 +8,12 @@
 
 from __future__ import annotations
 
-import contextlib
+import logging
 from dataclasses import replace
+from functools import partial
 from uuid import UUID
 
+from rag_kb.application.deletion import purge_indexes
 from rag_kb.application.graph_extract import GraphExtractor
 from rag_kb.application.vector_index import index_chunks
 from rag_kb.domain.errors import (
@@ -29,6 +31,8 @@ from rag_kb.domain.ports import (
     MetadataRepository,
     VectorStore,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class IndexingService:
@@ -132,20 +136,9 @@ class IndexingService:
         except Exception as exc:
             # 失败文档不能留下半套索引：三路索引之外，chunk 与图片行也要清掉。
             # 否则 ADR-022 的验收口径（chunk 行数 = 0）不成立，retry 也会基于旧块重建。
-            # 端口都没拿到时没有索引可删，但 chunk 仍需清。
-            if ports is not None:
-                _, vector_store, lexical_index, graph_store, _ = ports
-                with contextlib.suppress(Exception):
-                    await vector_store.delete_by_doc(kb_id, doc_id)
-                with contextlib.suppress(Exception):
-                    await lexical_index.delete_by_doc(kb_id, doc_id)
-                with contextlib.suppress(Exception):
-                    await graph_store.delete_by_doc(kb_id, doc_id)
-            with contextlib.suppress(Exception):
-                await self._repo.delete_chunks(kb_id, doc_id)
-            with contextlib.suppress(Exception):
-                await self._repo.replace_images(kb_id, doc_id, [])
-            with contextlib.suppress(Exception):
+            # 端口都没拿到时没有索引可删，但 chunk 仍需清（见 include_indexes 的说明）。
+            await self.cleanup_failed(kb_id, doc_id, include_indexes=ports is not None)
+            try:
                 await self._repo.update_document(
                     kb_id,
                     replace(
@@ -155,4 +148,40 @@ class IndexingService:
                         chunk_count=0,
                     ),
                 )
+            except Exception:
+                # 状态更新失败也不能掩盖原始异常，留日志交给 worker 的失败兜底。
+                logger.exception("mark document failed failed doc=%s", doc_id)
             raise
+
+    async def cleanup_failed(
+        self, kb_id: UUID, doc_id: UUID, *, include_indexes: bool = True
+    ) -> None:
+        """清理某文档的三路索引与 chunk/图片行（幂等，可重入）。
+
+        ``include_indexes=False`` 用于"端口校验阶段就失败"的调用方：那时三路一条都没写，
+        再去调 delete 只会把"端口缺失"污染成清理失败，也会让单测里
+        "端口缺失时不应有删除调用"的断言失去意义。
+
+        清理本身失败只记日志不抛出：调用方已经在处理原始异常，这里再抛会把真正的
+        失败原因盖掉（AGENTS §3.8 要求"不吞异常"，但吞掉的是**清理**异常并留下日志，
+        与静默丢弃业务异常是两回事）。
+        """
+        if include_indexes:
+            failures = await purge_indexes(
+                kb_id,
+                doc_id,
+                vector_store=self._vector_store,
+                lexical_index=self._lexical_index,
+                graph_store=self._graph_store,
+            )
+            if failures:
+                logger.error("cleanup indexes incomplete doc=%s: %s", doc_id, "；".join(failures))
+        rows = (
+            ("chunks", partial(self._repo.delete_chunks, kb_id, doc_id)),
+            ("image rows", partial(self._repo.replace_images, kb_id, doc_id, [])),
+        )
+        for name, step in rows:
+            try:
+                await step()
+            except Exception:
+                logger.exception("cleanup %s failed doc=%s", name, doc_id)

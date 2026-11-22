@@ -474,14 +474,25 @@ class PostgresMetadataRepository:
     @_to_thread
     def enqueue_ingest_job(self, kb_id: UUID, doc_id: UUID) -> IngestJob:
         with self._connection() as conn:
+            # 先确认文档属于这个知识库：端口签名带 kb_id 就该真的校验它，
+            # 否则跨库误调用只能靠外键报 500，而不是可读的 404。
+            cur = conn.execute(
+                "SELECT 1 FROM document WHERE id = %s AND kb_id = %s",
+                (doc_id, kb_id),
+            )
+            if cur.fetchone() is None:
+                raise NotFoundError("document", doc_id)
             cur = conn.execute(
                 """
-                INSERT INTO ingest_job (doc_id, stage, status)
-                VALUES (%s, 'parse', 'pending')
+                INSERT INTO ingest_job (doc_id, stage, status, attempts)
+                VALUES (
+                    %s, 'parse', 'pending',
+                    COALESCE((SELECT max(attempts) FROM ingest_job WHERE doc_id = %s), 0)
+                )
                 ON CONFLICT DO NOTHING
                 RETURNING id
                 """,
-                (doc_id,),
+                (doc_id, doc_id),
             )
             inserted = cur.fetchone()
             job_id = inserted["id"] if inserted else None

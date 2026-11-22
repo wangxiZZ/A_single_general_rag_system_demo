@@ -196,3 +196,42 @@ async def test_pipeline_propagates_parse_error_without_dirty_index() -> None:
 
     assert repo.chunks.get(job.doc_id, []) == []
     assert await repo.count_images(job.kb_id, job.doc_id) == 0
+
+
+class ExplodingIndexer:
+    """在落库之后失败，模拟"索引阶段挂掉"这条最容易留下脏数据的路径。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def index_document(self, kb_id, doc_id):
+        self.calls += 1
+        raise RuntimeError("milvus down")
+
+
+async def test_failure_after_persist_leaves_no_residue() -> None:
+    """回归：persist 之后的失败也必须清 chunk/图片行/图片文件，并把文档置 failed。
+
+    历史缺陷：只有 NotFound 分支清文件，其它失败由 worker 只改状态，于是 failed
+    文档仍能从 /chunks 读到内容、chunk_count 也不为 0。
+    """
+    repo = FakeMetadataRepository()
+    storage = FakeStorage()
+    _, _, job = await _seed(repo, storage)
+    indexer = ExplodingIndexer()
+
+    with pytest.raises(RuntimeError, match="milvus down"):
+        await _pipeline(
+            repo, storage, FakeParser(_parsed()), vlm=FakeVLM(), indexer=indexer
+        ).process(job)
+
+    assert indexer.calls == 1
+    assert repo.chunks.get(job.doc_id, []) == []
+    assert await repo.count_images(job.kb_id, job.doc_id) == 0
+    assert not any(path.startswith("images/") for path in storage.files)
+    document = repo.documents[job.doc_id]
+    assert document.status is DocumentStatus.FAILED
+    assert document.chunk_count == 0
+    assert "milvus down" in (document.error or "")
+    # 上传件必须保留，否则重试没东西可解析。
+    assert any(path.startswith("uploads/") for path in storage.files)

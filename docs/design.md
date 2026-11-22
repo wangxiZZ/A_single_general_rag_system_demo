@@ -59,7 +59,7 @@
 |---|---|---|
 | PDF | `page_no`, `bbox`, `char_start/char_end` | 第 N 页 |
 | docx | `char_start/char_end`, `seq` | 第 N 段 + 标题路径 |
-| 图片 | `image_id`, `page_no`（PDF） | 图片描述 + 页码 |
+| 图片 | `image_id`, `page_no`（PDF） | 图片描述 + 页码；命中时 `image_url` 指向原图接口，该接口用 `X-Page-No`/`X-Bbox`/`X-Seq` 回带位置 |
 | 图谱边 | `chunk_id`, `evidence_span` | 回到原文片段 |
 
 为 docx 伪造页码是明确禁止的：没有的信息就不展示。
@@ -85,6 +85,8 @@
 - 去重按 `chunk_id` 合并，`channels` 记录命中来源，`debug.rank_per_channel/raw_score`
   保留排查信息；
 - 某一路不可用（如未配 Embedding Key）时 hybrid 降级到其余通道；显式指定单通道则报配置错误。
+- 图片块命中时补 `image_url`（`/api/kbs/{kb}/documents/{doc}/images/{img}`），
+  保证"图片进了检索链路"与"能回到原文位置"是同一件事。
 
 ### 4.3 图谱链接与打分
 
@@ -99,6 +101,18 @@
 - 默认关闭：检索与融合路径不产生 LLM 调用；
 - `rerank=true` 且配置了端点时才走 LLM listwise 重排，只对前 30 条候选；
 - 端点/模型为空不等于服务故障，只有显式开启且缺配置才报错。
+
+### 4.5 中文查询的分词兜底
+
+jieba 对问句常把词切成单字（`年假有几天` → 年/假/有/几天），若只把连续单字合并成一个
+复合词，会得到 `年假有` 这种文档里不存在的串，关键词通道直接 0 命中（历史缺陷，
+线上复现过）。因此：
+
+1. 停用词表补高频单字虚词（有/无/会/几…），让它们成为词边界而不是粘合剂；
+2. 连续单字 run 同时产出**整串 + 2-gram**，让 `年假` 这类真实词重新成为候选；
+   索引侧用同一规则，保证两侧 token 空间一致；
+3. 代价是 `lex_tokens` 略长、排序有少量噪声，但 `to_tsquery` 是 OR 拼接，
+   漏召回比噪声更致命。
 
 ## 5. 回答与引用
 
@@ -121,11 +135,13 @@
 | 超过 `MAX_UPLOAD_MB` | HTTP 413 | 不建行、不落盘、不入队 |
 | 扩展名/magic bytes 不符 | HTTP 415 | 同上 |
 | 同库 sha256 重复 | HTTP 409 + 已有 doc id | 不重复落盘 |
-| 损坏 PDF / 扫描件 / 解析异常 | `document.status=failed` | 清 chunk/图片，三路无写入 |
-| 模型 Key 缺失 / embedding 失败 | `failed`，`error` 含可操作原因 | 清三路、chunk、图片行 |
+| 损坏 PDF / 扫描件 / 解析异常 | `document.status=failed` | 清 chunk、图片行、图片文件；三路无写入 |
+| 模型 Key 缺失 / embedding 失败 | `failed`，`error` 含可操作原因 | 清三路、chunk、图片行与图片文件 |
 | 图抽取全部失败 | `failed` | 同上 |
 | 个别 span/关系校验失败 | 不算失败 | 计入 `dropped_spans/dropped_relations` |
 | 摄取中被删除 | tombstone 中止 | 不标 failed，补清文件 |
+| 清理本身失败 | 原错误照常上报 | 清理异常进日志，不掩盖真实原因 |
+| 删除时某一路索引不可用 | HTTP 500 `storage_error`（可重试） | 三路都尝试过；DB 与文件保持原样 |
 
 `error` 截断到 2000 字符，不含堆栈与密钥。
 
@@ -142,6 +158,10 @@ pending → parsing → chunked → indexing → ready
 ### 6.3 删除与并发
 
 - 删除顺序：三路索引 → PG（级联 chunk/image/job）→ 磁盘；
+- 三路删除**全部尝试完再判断**：任一路失败汇总上报（`storage_error`，可重试），
+  DB 行与文件保持原样。遇错即停会留下"文档还在、某个通道已空"的半删状态，
+  比直接失败更难排查；
+- 重试失败文档前先清三路索引与 chunk/图片（保留上传件），否则重试完成前旧内容仍可召回；
 - `ingest_job` 用 `FOR UPDATE SKIP LOCKED` 领取，同文档最多一个活跃任务（部分唯一索引）；
 - 管线在解析后、图片后、落库前检查文档是否仍存在，删除则抛 `IngestAbortedError`；
 - 验收口径是"删后三通道 0 命中且底层计数为 0"，不是接口 204；
